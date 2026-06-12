@@ -46,6 +46,9 @@ type NpcArbitrageItem = {
   bazaar_sell_price: number
   npc_sell_price: number
   profit_per_item: number
+  profit_margin: number
+  estimated_profit: number
+  liquidity_score: number
   buy_volume: number
   sell_volume: number
   buy_orders: number
@@ -498,7 +501,7 @@ function App() {
             <article className="panel">
               <div className="panel-heading">
                 <h2>npc arbitrage</h2>
-                <span>bazaar to npc</span>
+                <span>liquidity filtered</span>
               </div>
 
               {npcArbitrageItems.length > 0 ? (
@@ -509,7 +512,7 @@ function App() {
                     <span>bazaar buy</span>
                     <span>npc sell</span>
                     <span>profit</span>
-                    <span>volume</span>
+                    <span>est. profit</span>
                   </div>
                   {npcArbitrageItems.slice(0, 5).map((item, index) => (
                     <div className="arbitrage-row" key={item.item_id}>
@@ -521,7 +524,7 @@ function App() {
                       <span>{formatCompact(item.bazaar_buy_price)}</span>
                       <span>{formatCompact(item.npc_sell_price)}</span>
                       <span className="positive">{formatCompact(item.profit_per_item)}</span>
-                      <span>{formatCompact(item.buy_volume + item.sell_volume)}</span>
+                      <span>{formatCompact(item.estimated_profit)}</span>
                     </div>
                   ))}
                 </div>
@@ -584,7 +587,7 @@ function App() {
                 <FileText size={16} />
                 <div>
                   <b>liquidity review</b>
-                  <small>volume filters are next for cleaner rankings</small>
+                  <small>npc candidates require sell-side depth and active orders</small>
                 </div>
               </div>
               <div className="insight-row">

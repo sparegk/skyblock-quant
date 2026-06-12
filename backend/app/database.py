@@ -9,6 +9,11 @@ from typing import Any
 
 DATABASE_PATH = Path(__file__).resolve().parents[2] / "data" / "skyblock_quant.db"
 
+MIN_NPC_ARBITRAGE_SELL_VOLUME = 10_000
+MIN_NPC_ARBITRAGE_SELL_ORDERS = 25
+MAX_NPC_ARBITRAGE_MARGIN = 0.25
+NPC_ARBITRAGE_VOLUME_CAP = 10_000
+
 
 def get_connection() -> sqlite3.Connection:
     """Open a SQLite connection that returns rows like dictionaries."""
@@ -147,7 +152,12 @@ def get_top_spreads(limit: int = 25) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def get_npc_arbitrage(limit: int = 25) -> list[dict[str, Any]]:
+def get_npc_arbitrage(
+    limit: int = 25,
+    min_sell_volume: int = MIN_NPC_ARBITRAGE_SELL_VOLUME,
+    min_sell_orders: int = MIN_NPC_ARBITRAGE_SELL_ORDERS,
+    max_profit_margin: float = MAX_NPC_ARBITRAGE_MARGIN,
+) -> list[dict[str, Any]]:
     """Return Bazaar items that can be sold to NPCs for estimated profit."""
     if not database_exists():
         return []
@@ -167,37 +177,74 @@ def get_npc_arbitrage(limit: int = 25) -> list[dict[str, Any]]:
 
         rows = connection.execute(
             """
-            SELECT
-                snapshots.item_id,
-                items.item_name,
-                items.category,
-                items.tier,
-                snapshots.buy_price AS bazaar_buy_price,
-                snapshots.sell_price AS bazaar_sell_price,
-                items.npc_sell_price,
-                items.npc_sell_price - snapshots.buy_price AS profit_per_item,
-                snapshots.buy_volume,
-                snapshots.sell_volume,
-                snapshots.buy_orders,
-                snapshots.sell_orders,
-                snapshots.collected_at
-            FROM bazaar_snapshots AS snapshots
-            INNER JOIN items
-                ON items.item_id = snapshots.item_id
-            WHERE snapshots.collected_at = (
-                SELECT MAX(collected_at)
-                FROM bazaar_snapshots
+            WITH candidates AS (
+                SELECT
+                    snapshots.item_id,
+                    items.item_name,
+                    items.category,
+                    items.tier,
+                    snapshots.sell_price AS bazaar_buy_price,
+                    snapshots.buy_price AS bazaar_sell_price,
+                    items.npc_sell_price,
+                    items.npc_sell_price - snapshots.sell_price AS profit_per_item,
+                    (items.npc_sell_price - snapshots.sell_price) / snapshots.sell_price
+                        AS profit_margin,
+                    snapshots.buy_volume,
+                    snapshots.sell_volume,
+                    snapshots.buy_orders,
+                    snapshots.sell_orders,
+                    snapshots.collected_at
+                FROM bazaar_snapshots AS snapshots
+                INNER JOIN items
+                    ON items.item_id = snapshots.item_id
+                WHERE snapshots.collected_at = (
+                    SELECT MAX(collected_at)
+                    FROM bazaar_snapshots
+                )
+                AND items.npc_sell_price IS NOT NULL
+                AND items.npc_sell_price > 0
+                AND snapshots.sell_price > 0
+                AND items.npc_sell_price - snapshots.sell_price > 0
+                AND snapshots.sell_volume >= ?
+                AND snapshots.sell_orders >= ?
             )
-            AND items.npc_sell_price IS NOT NULL
-            AND items.npc_sell_price > 0
-            AND snapshots.buy_price > 0
-            AND items.npc_sell_price - snapshots.buy_price > 0
+            SELECT
+                item_id,
+                item_name,
+                category,
+                tier,
+                bazaar_buy_price,
+                bazaar_sell_price,
+                npc_sell_price,
+                profit_per_item,
+                profit_margin,
+                profit_per_item *
+                    CASE
+                        WHEN sell_volume > ? THEN ?
+                        ELSE sell_volume
+                    END AS estimated_profit,
+                sell_volume / 1000.0 + sell_orders AS liquidity_score,
+                buy_volume,
+                sell_volume,
+                buy_orders,
+                sell_orders,
+                collected_at
+            FROM candidates
+            WHERE profit_margin <= ?
             ORDER BY
-                profit_per_item DESC,
-                snapshots.buy_volume + snapshots.sell_volume DESC
+                estimated_profit DESC,
+                liquidity_score DESC,
+                profit_per_item DESC
             LIMIT ?
             """,
-            (limit,),
+            (
+                min_sell_volume,
+                min_sell_orders,
+                NPC_ARBITRAGE_VOLUME_CAP,
+                NPC_ARBITRAGE_VOLUME_CAP,
+                max_profit_margin,
+                limit,
+            ),
         ).fetchall()
 
     return [dict(row) for row in rows]
