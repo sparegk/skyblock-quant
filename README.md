@@ -11,7 +11,6 @@ This project is not an auto-trading bot. It is an educational analytics tool for
 - Rank items by profit, volume, risk, and confidence
 - Generate explainable buy, watch, or avoid signals
 - Backtest signals to see if they worked historically
-- Send useful alerts through a dashboard and Discord bot
 
 ## Main Features
 
@@ -70,9 +69,9 @@ The project will track results such as:
 
 This makes the project more than just a price tracker. It shows whether the strategy actually works.
 
-### Dashboard and Discord Bot
+### Dashboard
 
-The main product should be a web dashboard, with Discord used for alerts and quick commands.
+The main product should be a web dashboard for viewing market data, signals, and backtesting results.
 
 The dashboard should include:
 
@@ -82,8 +81,6 @@ The dashboard should include:
 - Item detail pages
 - Price and volume charts
 - Backtesting results
-
-The Discord bot can send alerts when strong opportunities appear.
 
 ## Planned Tech Stack
 
@@ -109,7 +106,6 @@ The Discord bot can send alerts when strong opportunities appear.
 6. Add backtesting results
 7. Build rule-based signals
 8. Add machine learning after enough data has been collected
-9. Add Discord alerts
 
 ## Project Status
 
