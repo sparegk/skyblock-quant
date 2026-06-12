@@ -22,6 +22,7 @@ from app.database import (
     NPC_ARBITRAGE_HISTORY_SNAPSHOTS,
     get_investment_momentum,
     get_latest_snapshot,
+    get_latest_signals,
     get_market_summary,
     get_npc_arbitrage,
     get_npc_arbitrage_detail,
@@ -141,3 +142,11 @@ def investment_momentum(
             min_rising_steps=min_rising_steps,
         )
     }
+
+
+@app.get("/api/signals/latest")
+def latest_signals(
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    refresh: bool = True,
+) -> dict[str, object]:
+    return {"signals": get_latest_signals(limit=limit, refresh=refresh)}

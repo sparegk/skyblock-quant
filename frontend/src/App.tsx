@@ -113,6 +113,22 @@ type InvestmentMomentumItem = {
   momentum_score: number
 }
 
+type MarketSignal = {
+  id: number
+  created_at: string
+  source_snapshot: string | null
+  item_id: string
+  item_name: string
+  signal_type: string
+  title: string
+  message: string
+  confidence: number
+  expected_return: number | null
+  risk_score: number
+  severity: 'positive' | 'watch' | 'risk' | string
+  explanation: Record<string, unknown>
+}
+
 type DetailMetricProps = {
   label: string
   value: ReactNode
@@ -125,15 +141,6 @@ type MiniLineChartProps = {
   label: string
   compact?: boolean
 }
-
-type NpcFilterKey =
-  | 'minSellVolume'
-  | 'minSellOrders'
-  | 'maxProfitMargin'
-  | 'historySnapshots'
-  | 'minProfitableSnapshots'
-
-type NpcFilters = Record<NpcFilterKey, number>
 
 const navItems = [
   { label: 'home', icon: Home, active: true },
@@ -255,6 +262,26 @@ function getMomentumLabelClass(item: InvestmentMomentumItem) {
   return 'quality-badge'
 }
 
+function getSignalDotClass(signal: MarketSignal) {
+  if (signal.severity === 'positive') {
+    return 'alert-dot positive-dot'
+  }
+
+  if (signal.severity === 'risk') {
+    return 'alert-dot risk-dot'
+  }
+
+  return 'alert-dot watch-dot'
+}
+
+function getSignalShortText(signal: MarketSignal) {
+  if (signal.expected_return !== null) {
+    return `${formatPercent(signal.expected_return)} expected move`
+  }
+
+  return `${Math.round(signal.confidence * 100)}% confidence`
+}
+
 function getMinecraftIconName(itemId: string) {
   const customIcons: Record<string, string> = {
     BROWN_MUSHROOM: 'brown_mushroom',
@@ -374,40 +401,6 @@ function MiniLineChart({ values, label, compact = false }: MiniLineChartProps) {
   )
 }
 
-function clampNumber(value: number, min: number, max: number) {
-  if (!Number.isFinite(value)) {
-    return min
-  }
-
-  return Math.min(Math.max(value, min), max)
-}
-
-const defaultNpcFilters: NpcFilters = {
-  minSellVolume: 10_000,
-  minSellOrders: 25,
-  maxProfitMargin: 25,
-  historySnapshots: 5,
-  minProfitableSnapshots: 2,
-}
-
-const npcFilterPresets: Record<'strict' | 'balanced' | 'loose', NpcFilters> = {
-  strict: {
-    minSellVolume: 50_000,
-    minSellOrders: 75,
-    maxProfitMargin: 15,
-    historySnapshots: 5,
-    minProfitableSnapshots: 4,
-  },
-  balanced: defaultNpcFilters,
-  loose: {
-    minSellVolume: 2_500,
-    minSellOrders: 10,
-    maxProfitMargin: 40,
-    historySnapshots: 3,
-    minProfitableSnapshots: 1,
-  },
-}
-
 function getNpcTrend(detail: NpcArbitrageDetail | null) {
   if (!detail || detail.history.length < 2) {
     return 'steady'
@@ -447,9 +440,9 @@ function App() {
   const [items, setItems] = useState<BazaarItem[]>([])
   const [npcArbitrageItems, setNpcArbitrageItems] = useState<NpcArbitrageItem[]>([])
   const [investmentItems, setInvestmentItems] = useState<InvestmentMomentumItem[]>([])
+  const [signals, setSignals] = useState<MarketSignal[]>([])
   const [selectedNpcItemId, setSelectedNpcItemId] = useState<string | null>(null)
   const [selectedNpcDetail, setSelectedNpcDetail] = useState<NpcArbitrageDetail | null>(null)
-  const [npcFilters, setNpcFilters] = useState<NpcFilters>(defaultNpcFilters)
   const [query, setQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isArbitrageLoading, setIsArbitrageLoading] = useState(true)
@@ -462,13 +455,20 @@ function App() {
         setIsLoading(true)
         setError(null)
 
-        const [summaryResponse, itemsResponse, investmentResponse] = await Promise.all([
+        const [summaryResponse, itemsResponse, investmentResponse, signalsResponse] =
+          await Promise.all([
           fetch(`${API_BASE_URL}/api/bazaar/summary`),
           fetch(`${API_BASE_URL}/api/bazaar/latest?limit=40`),
           fetch(`${API_BASE_URL}/api/investments/momentum?limit=5`),
+          fetch(`${API_BASE_URL}/api/signals/latest?limit=8`),
         ])
 
-        if (!summaryResponse.ok || !itemsResponse.ok || !investmentResponse.ok) {
+        if (
+          !summaryResponse.ok ||
+          !itemsResponse.ok ||
+          !investmentResponse.ok ||
+          !signalsResponse.ok
+        ) {
           throw new Error('Backend API request failed.')
         }
 
@@ -477,10 +477,12 @@ function App() {
         const investmentData = (await investmentResponse.json()) as {
           items: InvestmentMomentumItem[]
         }
+        const signalsData = (await signalsResponse.json()) as { signals: MarketSignal[] }
 
         setSummary(summaryData)
         setItems(itemsData.items)
         setInvestmentItems(investmentData.items)
+        setSignals(signalsData.signals)
       } catch {
         setError('start the backend api to load live bazaar data')
       } finally {
@@ -499,14 +501,7 @@ function App() {
         setIsArbitrageLoading(true)
         setError(null)
 
-        const params = new URLSearchParams({
-          limit: '8',
-          min_sell_volume: String(npcFilters.minSellVolume),
-          min_sell_orders: String(npcFilters.minSellOrders),
-          max_profit_margin: String(npcFilters.maxProfitMargin / 100),
-          history_snapshots: String(npcFilters.historySnapshots),
-          min_profitable_snapshots: String(npcFilters.minProfitableSnapshots),
-        })
+        const params = new URLSearchParams({ limit: '8' })
         const response = await fetch(`${API_BASE_URL}/api/arbitrage/npc?${params}`, {
           signal: request.signal,
         })
@@ -522,7 +517,7 @@ function App() {
             return current
           }
 
-          return data.items[0]?.item_id ?? null
+          return null
         })
       } catch (loadError) {
         if (loadError instanceof DOMException && loadError.name === 'AbortError') {
@@ -541,7 +536,7 @@ function App() {
     loadNpcArbitrage()
 
     return () => request.abort()
-  }, [npcFilters])
+  }, [])
 
   useEffect(() => {
     if (!selectedNpcItemId) {
@@ -555,7 +550,7 @@ function App() {
       try {
         setIsNpcDetailLoading(true)
         const params = new URLSearchParams({
-          history_snapshots: String(npcFilters.historySnapshots),
+          history_snapshots: '5',
         })
         const response = await fetch(
           `${API_BASE_URL}/api/arbitrage/npc/${selectedNpcItemId}?${params}`,
@@ -584,33 +579,7 @@ function App() {
     loadNpcDetail()
 
     return () => request.abort()
-  }, [npcFilters.historySnapshots, selectedNpcItemId])
-
-  function updateNpcFilter(filter: NpcFilterKey, value: number) {
-    setNpcFilters((current) => {
-      const limits: Record<NpcFilterKey, [number, number]> = {
-        minSellVolume: [0, 10_000_000],
-        minSellOrders: [0, 10_000],
-        maxProfitMargin: [1, 1000],
-        historySnapshots: [1, 100],
-        minProfitableSnapshots: [1, current.historySnapshots],
-      }
-      const [min, max] = limits[filter]
-      const nextValue = clampNumber(value, min, max)
-
-      return {
-        ...current,
-        [filter]: nextValue,
-        ...(filter === 'historySnapshots' && current.minProfitableSnapshots > nextValue
-          ? { minProfitableSnapshots: nextValue }
-          : {}),
-      }
-    })
-  }
-
-  function applyNpcFilters(filters: NpcFilters) {
-    setNpcFilters(filters)
-  }
+  }, [selectedNpcItemId])
 
   const rankedItems = useMemo(
     () => [...items].sort((a, b) => scoreItem(b) - scoreItem(a)),
@@ -639,7 +608,6 @@ function App() {
   const snapshotAgeMinutes = getSnapshotAgeMinutes(summary?.latest_snapshot ?? null)
   const isSnapshotStale = snapshotAgeMinutes !== null && snapshotAgeMinutes > 20
   const topRankings = rankedItems.slice(0, 3)
-  const alertItems = rankedItems.slice(0, 3)
   const averageSpread =
     rankedItems.length > 0
       ? rankedItems.reduce((sum, item) => sum + Math.max(spreadPercent(item), 0), 0) /
@@ -890,87 +858,6 @@ function App() {
                 <span>{isArbitrageLoading ? 'updating' : 'liquidity filtered'}</span>
               </div>
 
-              <div className="filter-actions" aria-label="npc arbitrage presets">
-                <button type="button" onClick={() => applyNpcFilters(npcFilterPresets.strict)}>
-                  strict
-                </button>
-                <button type="button" onClick={() => applyNpcFilters(npcFilterPresets.balanced)}>
-                  balanced
-                </button>
-                <button type="button" onClick={() => applyNpcFilters(npcFilterPresets.loose)}>
-                  loose
-                </button>
-                <button type="button" onClick={() => applyNpcFilters(defaultNpcFilters)}>
-                  reset
-                </button>
-              </div>
-
-              <div className="filter-grid" aria-label="npc arbitrage filters">
-                <label>
-                  <span>min volume</span>
-                  <input
-                    min="0"
-                    step="1000"
-                    type="number"
-                    value={npcFilters.minSellVolume}
-                    onChange={(event) =>
-                      updateNpcFilter('minSellVolume', Number(event.target.value))
-                    }
-                  />
-                </label>
-                <label>
-                  <span>min orders</span>
-                  <input
-                    min="0"
-                    step="5"
-                    type="number"
-                    value={npcFilters.minSellOrders}
-                    onChange={(event) =>
-                      updateNpcFilter('minSellOrders', Number(event.target.value))
-                    }
-                  />
-                </label>
-                <label>
-                  <span>max margin</span>
-                  <input
-                    min="1"
-                    max="1000"
-                    step="1"
-                    type="number"
-                    value={npcFilters.maxProfitMargin}
-                    onChange={(event) =>
-                      updateNpcFilter('maxProfitMargin', Number(event.target.value))
-                    }
-                  />
-                </label>
-                <label>
-                  <span>history</span>
-                  <input
-                    min="1"
-                    max="100"
-                    step="1"
-                    type="number"
-                    value={npcFilters.historySnapshots}
-                    onChange={(event) =>
-                      updateNpcFilter('historySnapshots', Number(event.target.value))
-                    }
-                  />
-                </label>
-                <label>
-                  <span>profitable</span>
-                  <input
-                    min="1"
-                    max={npcFilters.historySnapshots}
-                    step="1"
-                    type="number"
-                    value={npcFilters.minProfitableSnapshots}
-                    onChange={(event) =>
-                      updateNpcFilter('minProfitableSnapshots', Number(event.target.value))
-                    }
-                  />
-                </label>
-              </div>
-
               {isArbitrageLoading ? (
                 <p className="empty-state">loading npc arbitrage...</p>
               ) : npcArbitrageItems.length > 0 ? (
@@ -980,8 +867,7 @@ function App() {
                     <span>item</span>
                     <span>bazaar buy</span>
                     <span>npc sell</span>
-                    <span>profit</span>
-                    <span>hist. profit</span>
+                    <span>profit per item</span>
                   </div>
                   {npcArbitrageItems.slice(0, 5).map((item, index) => (
                     <button
@@ -1007,7 +893,6 @@ function App() {
                       <span>{formatCompact(item.bazaar_buy_price)}</span>
                       <span>{formatCompact(item.npc_sell_price)}</span>
                       <span className="positive">{formatCompact(item.profit_per_item)}</span>
-                      <span>{formatCompact(item.history_adjusted_profit)}</span>
                     </button>
                   ))}
                 </div>
@@ -1198,18 +1083,21 @@ function App() {
                 <h2>active alerts</h2>
                 <span>view all -&gt;</span>
               </div>
-              {alertItems.map((item) => (
-                <div className="alert-row" key={item.item_id}>
-                  <span className="alert-dot" />
-                  <div>
-                    <b>{formatItemName(item.item_id)}</b>
-                    <small>
-                      {spreadPercent(item).toFixed(2)}% spread ·{' '}
-                      {formatCompact(item.buy_volume + item.sell_volume)} volume
-                    </small>
+              {signals.length > 0 ? (
+                signals.slice(0, 4).map((signal) => (
+                  <div className="alert-row" key={`${signal.signal_type}-${signal.item_id}`}>
+                    <span className={getSignalDotClass(signal)} />
+                    <div>
+                      <b>{signal.title}</b>
+                      <small>
+                        {signal.item_name} · {getSignalShortText(signal)}
+                      </small>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="empty-state">waiting for live signals.</p>
+              )}
             </article>
           </aside>
         </section>

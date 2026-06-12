@@ -71,6 +71,13 @@ class ApiRouteTests(unittest.TestCase):
             min_rising_steps=2,
         )
 
+    def test_latest_signals_passes_query_params(self) -> None:
+        with patch("app.main.get_latest_signals", return_value=[]) as latest_signals:
+            response = main.latest_signals(limit=8, refresh=False)
+
+        self.assertEqual({"signals": []}, response)
+        latest_signals.assert_called_once_with(limit=8, refresh=False)
+
 
 if __name__ == "__main__":
     unittest.main()

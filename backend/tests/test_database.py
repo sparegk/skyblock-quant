@@ -24,7 +24,7 @@ class NpcArbitrageTests(unittest.TestCase):
         rows = database.get_npc_arbitrage(limit=10)
         item_ids = [row["item_id"] for row in rows]
 
-        self.assertEqual(["HIGH_ESTIMATED", "LOW_MARGIN"], item_ids)
+        self.assertEqual(["BOBBIN_SCRIPTURES", "HIGH_ESTIMATED", "LOW_MARGIN"], item_ids)
         self.assertNotIn("LOW_VOLUME", item_ids)
         self.assertNotIn("LOW_ORDERS", item_ids)
         self.assertNotIn("HIGH_MARGIN_OUTLIER", item_ids)
@@ -123,6 +123,52 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertEqual(2, steady_rise["rising_steps"])
         self.assertGreaterEqual(steady_rise["gain_percent"], 0.03)
 
+    def test_generates_and_persists_rule_based_signals(self) -> None:
+        generated = database.generate_rule_based_signals()
+        signal_types = {signal["signal_type"] for signal in generated}
+
+        self.assertIn("NPC_FLIP", signal_types)
+        self.assertIn("PRICE_MOMENTUM", signal_types)
+
+        saved = database.get_latest_signals(limit=10, refresh=False)
+        saved_types = {signal["signal_type"] for signal in saved}
+
+        self.assertIn("NPC_FLIP", saved_types)
+        self.assertIn("PRICE_MOMENTUM", saved_types)
+        self.assertTrue(all("explanation" in signal for signal in saved))
+
+    def test_initializes_backtest_results_table(self) -> None:
+        database.initialize_analysis_tables()
+
+        with closing(sqlite3.connect(database.DATABASE_PATH)) as connection:
+            columns = {
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA table_info(backtest_results)"
+                ).fetchall()
+            }
+            indexes = {
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA index_list(backtest_results)"
+                ).fetchall()
+            }
+
+        self.assertTrue(
+            {
+                "signal_id",
+                "item_id",
+                "signal_type",
+                "horizon",
+                "entry_price",
+                "exit_price",
+                "return_percent",
+                "was_successful",
+            }.issubset(columns)
+        )
+        self.assertIn("idx_backtest_results_unique_signal", indexes)
+        self.assertIn("idx_backtest_results_item", indexes)
+
     def _find_item(
         self, rows: list[dict[str, object]], item_id: str
     ) -> dict[str, object]:
@@ -165,8 +211,30 @@ class NpcArbitrageTests(unittest.TestCase):
                 ("2026-06-12T13:00:00Z", "LOW_MARGIN", 100, 96, 50_000, 100_000, 100, 100, 4),
                 ("2026-06-12T13:30:00Z", "HIGH_ESTIMATED", 100, 92, 50_000, 30_000, 100, 100, 8),
                 ("2026-06-12T13:30:00Z", "LOW_MARGIN", 100, 97, 50_000, 100_000, 100, 100, 3),
+                (
+                    "2026-06-12T13:30:00Z",
+                    "BOBBIN_SCRIPTURES",
+                    250_000,
+                    200_000,
+                    50_000,
+                    100_000,
+                    100,
+                    100,
+                    50_000,
+                ),
                 ("2026-06-12T14:00:00Z", "HIGH_ESTIMATED", 100, 90, 50_000, 30_000, 100, 100, 10),
                 ("2026-06-12T14:00:00Z", "LOW_MARGIN", 100, 95, 50_000, 100_000, 100, 100, 5),
+                (
+                    "2026-06-12T14:00:00Z",
+                    "BOBBIN_SCRIPTURES",
+                    250_000,
+                    200_000,
+                    50_000,
+                    100_000,
+                    100,
+                    100,
+                    50_000,
+                ),
                 ("2026-06-12T13:00:00Z", "STEADY_RISE", 100, 104, 80_000, 90_000, 120, 130, -4),
                 ("2026-06-12T13:30:00Z", "STEADY_RISE", 104, 108, 82_000, 91_000, 125, 132, -4),
                 ("2026-06-12T14:00:00Z", "STEADY_RISE", 108, 112, 85_000, 93_000, 130, 135, -4),
@@ -259,6 +327,7 @@ class NpcArbitrageTests(unittest.TestCase):
                 ("ONE_SNAPSHOT_SPIKE", "One Snapshot Spike", "test", "COMMON", 100),
                 ("HIGH_MARGIN_OUTLIER", "High Margin Outlier", "test", "COMMON", 100),
                 ("NO_PROFIT", "No Profit", "test", "COMMON", 100),
+                ("BOBBIN_SCRIPTURES", "Bobbin Scriptures", "test", "RARE", 250_000),
                 ("STEADY_RISE", "Steady Rise", "test", "RARE", None),
                 ("ONE_PUMP", "One Pump", "test", "RARE", None),
                 ("LOW_VOLUME_INVEST", "Low Volume Invest", "test", "RARE", None),

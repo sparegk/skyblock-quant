@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import closing
+from datetime import UTC, datetime
+import json
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,11 @@ MIN_MOMENTUM_ORDERS = 25
 MIN_MOMENTUM_GAIN = 0.03
 MAX_MOMENTUM_SINGLE_JUMP = 0.35
 MIN_MOMENTUM_RISING_STEPS = 2
+STALE_SNAPSHOT_MINUTES = 20
+
+
+def utc_now() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def get_connection() -> sqlite3.Connection:
@@ -34,6 +41,85 @@ def get_connection() -> sqlite3.Connection:
 
 def database_exists() -> bool:
     return DATABASE_PATH.exists()
+
+
+def create_signal_tables(connection: sqlite3.Connection) -> None:
+    """Create tables used to persist generated market signals and results."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            source_snapshot TEXT,
+            item_id TEXT NOT NULL,
+            item_name TEXT NOT NULL,
+            signal_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            expected_return REAL,
+            risk_score REAL NOT NULL,
+            severity TEXT NOT NULL,
+            explanation_json TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_signals_unique_snapshot
+        ON signals (source_snapshot, item_id, signal_type)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_signals_created_at
+        ON signals (created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS backtest_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            signal_id INTEGER NOT NULL,
+            item_id TEXT NOT NULL,
+            signal_type TEXT NOT NULL,
+            horizon TEXT NOT NULL,
+            entry_time TEXT NOT NULL,
+            exit_time TEXT NOT NULL,
+            entry_price REAL NOT NULL,
+            exit_price REAL NOT NULL,
+            return_percent REAL NOT NULL,
+            max_drawdown_percent REAL,
+            max_gain_percent REAL,
+            was_successful INTEGER NOT NULL,
+            evaluated_at TEXT NOT NULL,
+            notes TEXT,
+            FOREIGN KEY(signal_id) REFERENCES signals(id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_backtest_results_unique_signal
+        ON backtest_results (signal_id, horizon)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_backtest_results_item
+        ON backtest_results (item_id, signal_type, horizon)
+        """
+    )
+    connection.commit()
+
+
+def initialize_analysis_tables() -> None:
+    """Ensure signal and backtest tables exist in the configured database."""
+    if not database_exists():
+        return
+
+    with closing(get_connection()) as connection:
+        create_signal_tables(connection)
 
 
 def get_market_summary() -> dict[str, Any]:
@@ -602,3 +688,219 @@ def get_investment_momentum(
         ).fetchall()
 
     return [dict(row) for row in rows]
+
+
+def get_snapshot_age_minutes(snapshot_time: str | None) -> int | None:
+    if not snapshot_time:
+        return None
+
+    normalized = snapshot_time.replace("Z", "+00:00")
+    try:
+        timestamp = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=UTC)
+
+    return max(0, int((datetime.now(UTC) - timestamp).total_seconds() // 60))
+
+
+def save_signals(signals: list[dict[str, Any]]) -> int:
+    if not database_exists() or not signals:
+        return 0
+
+    with closing(get_connection()) as connection:
+        create_signal_tables(connection)
+        rows = [
+            (
+                signal["created_at"],
+                signal.get("source_snapshot"),
+                signal["item_id"],
+                signal["item_name"],
+                signal["signal_type"],
+                signal["title"],
+                signal["message"],
+                signal["confidence"],
+                signal.get("expected_return"),
+                signal["risk_score"],
+                signal["severity"],
+                json.dumps(signal["explanation"], sort_keys=True),
+            )
+            for signal in signals
+        ]
+        connection.executemany(
+            """
+            INSERT INTO signals (
+                created_at,
+                source_snapshot,
+                item_id,
+                item_name,
+                signal_type,
+                title,
+                message,
+                confidence,
+                expected_return,
+                risk_score,
+                severity,
+                explanation_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source_snapshot, item_id, signal_type) DO UPDATE SET
+                created_at = excluded.created_at,
+                item_name = excluded.item_name,
+                title = excluded.title,
+                message = excluded.message,
+                confidence = excluded.confidence,
+                expected_return = excluded.expected_return,
+                risk_score = excluded.risk_score,
+                severity = excluded.severity,
+                explanation_json = excluded.explanation_json
+            """,
+            rows,
+        )
+        connection.commit()
+
+    return len(rows)
+
+
+def generate_rule_based_signals() -> list[dict[str, Any]]:
+    """Generate and persist the current rule-based market signals."""
+    summary = get_market_summary()
+    if not summary.get("database_ready"):
+        return []
+
+    created_at = utc_now()
+    source_snapshot = summary.get("latest_snapshot")
+    signals: list[dict[str, Any]] = []
+
+    for item in get_npc_arbitrage(limit=5):
+        confidence = min(0.98, 0.55 + item["profit_consistency"] * 0.3 + item["profit_margin"])
+        risk_score = min(
+            1.0,
+            0.2
+            + max(0, 0.2 - item["profit_margin"])
+            + (0.15 if item["sell_volume"] < 20_000 else 0),
+        )
+        signals.append(
+            {
+                "created_at": created_at,
+                "source_snapshot": source_snapshot,
+                "item_id": item["item_id"],
+                "item_name": item["item_name"],
+                "signal_type": "NPC_FLIP",
+                "title": "npc flip found",
+                "message": (
+                    f"{item['item_name']} can sell to NPC for "
+                    f"{item['profit_per_item']:.0f} coins profit each."
+                ),
+                "confidence": round(confidence, 4),
+                "expected_return": item["profit_margin"],
+                "risk_score": round(risk_score, 4),
+                "severity": "positive",
+                "explanation": {
+                    "profit_per_item": item["profit_per_item"],
+                    "profit_margin": item["profit_margin"],
+                    "sell_volume": item["sell_volume"],
+                    "sell_orders": item["sell_orders"],
+                    "profitable_snapshots": item["profitable_snapshots"],
+                    "observed_snapshots": item["observed_snapshots"],
+                },
+            }
+        )
+
+    for item in get_investment_momentum(limit=5):
+        confidence = min(0.95, 0.5 + item["gain_percent"] * 3 + item["rising_steps"] * 0.08)
+        risk_score = min(1.0, item["max_single_jump"] * 2 + (0.15 if item["average_volume"] < 50_000 else 0))
+        signals.append(
+            {
+                "created_at": created_at,
+                "source_snapshot": source_snapshot,
+                "item_id": item["item_id"],
+                "item_name": item["item_name"],
+                "signal_type": "PRICE_MOMENTUM",
+                "title": "item heating up",
+                "message": (
+                    f"{item['item_name']} is up {item['gain_percent'] * 100:.1f}% "
+                    "across recent Bazaar snapshots."
+                ),
+                "confidence": round(confidence, 4),
+                "expected_return": item["gain_percent"],
+                "risk_score": round(risk_score, 4),
+                "severity": "watch",
+                "explanation": {
+                    "gain_percent": item["gain_percent"],
+                    "rising_steps": item["rising_steps"],
+                    "observed_snapshots": item["observed_snapshots"],
+                    "average_volume": item["average_volume"],
+                    "max_single_jump": item["max_single_jump"],
+                },
+            }
+        )
+
+    snapshot_age = get_snapshot_age_minutes(source_snapshot if isinstance(source_snapshot, str) else None)
+    if snapshot_age is not None and snapshot_age > STALE_SNAPSHOT_MINUTES:
+        signals.append(
+            {
+                "created_at": created_at,
+                "source_snapshot": source_snapshot,
+                "item_id": "__MARKET__",
+                "item_name": "Market data",
+                "signal_type": "STALE_DATA",
+                "title": "snapshot is old",
+                "message": f"Latest Bazaar snapshot is {snapshot_age} minutes old.",
+                "confidence": 1.0,
+                "expected_return": None,
+                "risk_score": 0.8,
+                "severity": "risk",
+                "explanation": {
+                    "snapshot_age_minutes": snapshot_age,
+                    "stale_after_minutes": STALE_SNAPSHOT_MINUTES,
+                },
+            }
+        )
+
+    save_signals(signals)
+    return signals
+
+
+def get_latest_signals(limit: int = 25, refresh: bool = True) -> list[dict[str, Any]]:
+    """Return latest persisted signals, optionally refreshing them first."""
+    if not database_exists():
+        return []
+
+    if refresh:
+        generate_rule_based_signals()
+
+    with closing(get_connection()) as connection:
+        create_signal_tables(connection)
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                created_at,
+                source_snapshot,
+                item_id,
+                item_name,
+                signal_type,
+                title,
+                message,
+                confidence,
+                expected_return,
+                risk_score,
+                severity,
+                explanation_json
+            FROM signals
+            ORDER BY created_at DESC, confidence DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    signals = []
+    for row in rows:
+        signal = dict(row)
+        signal["explanation"] = json.loads(signal.pop("explanation_json"))
+        signals.append(signal)
+
+    return signals

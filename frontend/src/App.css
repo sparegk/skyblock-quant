@@ -427,69 +427,6 @@
   display: grid;
 }
 
-.filter-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-bottom: 10px;
-}
-
-.filter-actions button {
-  height: 30px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  padding: 0 10px;
-  text-transform: lowercase;
-}
-
-.filter-actions button:hover {
-  border-color: rgba(98, 238, 89, 0.35);
-}
-
-.filter-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(96px, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.filter-grid label {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.filter-grid span {
-  color: var(--muted);
-  font-size: 11px;
-  text-transform: lowercase;
-}
-
-.filter-grid input {
-  width: 100%;
-  min-width: 0;
-  height: 34px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  outline: 0;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
-  font: inherit;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  padding: 0 9px;
-}
-
-.filter-grid input:focus {
-  border-color: rgba(98, 238, 89, 0.45);
-  box-shadow: 0 0 0 3px rgba(98, 238, 89, 0.08);
-}
-
 .opportunity-row,
 .arbitrage-row {
   display: grid;
@@ -503,7 +440,7 @@
 }
 
 .arbitrage-row {
-  grid-template-columns: 32px minmax(220px, 1fr) repeat(4, minmax(82px, 0.48fr));
+  grid-template-columns: 32px minmax(240px, 1fr) repeat(3, minmax(92px, 0.5fr));
 }
 
 button.arbitrage-row {
@@ -828,6 +765,21 @@ button.arbitrage-row:hover,
   box-shadow: 0 0 0 4px rgba(98, 238, 89, 0.1);
 }
 
+.alert-dot.positive-dot {
+  background: var(--green);
+  box-shadow: 0 0 0 4px rgba(98, 238, 89, 0.1);
+}
+
+.alert-dot.watch-dot {
+  background: #ffb457;
+  box-shadow: 0 0 0 4px rgba(255, 180, 87, 0.12);
+}
+
+.alert-dot.risk-dot {
+  background: var(--red);
+  box-shadow: 0 0 0 4px rgba(255, 99, 99, 0.12);
+}
+
 .empty-state {
   color: var(--muted);
   border: 1px dashed var(--border);
@@ -877,7 +829,6 @@ button.arbitrage-row:hover,
 
   .toolbar,
   .metric-grid,
-  .filter-grid,
   .forecast-chart-layout,
   .detail-grid {
     grid-template-columns: 1fr;
