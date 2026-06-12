@@ -427,6 +427,30 @@
   display: grid;
 }
 
+.filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.filter-actions button {
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 0 10px;
+  text-transform: lowercase;
+}
+
+.filter-actions button:hover {
+  border-color: rgba(98, 238, 89, 0.35);
+}
+
 .filter-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(96px, 1fr));
@@ -480,6 +504,27 @@
 
 .arbitrage-row {
   grid-template-columns: 32px minmax(220px, 1fr) repeat(4, minmax(82px, 0.48fr));
+}
+
+button.arbitrage-row {
+  width: 100%;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+button.arbitrage-row:hover,
+.arbitrage-row.selected {
+  background: rgba(98, 238, 89, 0.055);
+}
+
+.arbitrage-row.selected {
+  border-color: rgba(98, 238, 89, 0.25);
 }
 
 .opportunity-row:last-child,
@@ -556,6 +601,62 @@
   color: #ffd05a;
 }
 
+.npc-detail-panel {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.compact-heading {
+  margin-bottom: 10px;
+}
+
+.compact-heading h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 540;
+}
+
+.npc-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.npc-detail-grid .detail-metric {
+  border-bottom: 0;
+}
+
+.history-table {
+  display: grid;
+  margin-top: 11px;
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) repeat(3, minmax(82px, 0.55fr));
+  gap: 10px;
+  align-items: center;
+  min-height: 36px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-row:last-child {
+  border-bottom: 0;
+}
+
+.history-row b {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .table-score {
   display: inline-flex;
   width: 42px;
@@ -573,18 +674,90 @@
 }
 
 .forecast-panel {
-  min-height: 166px;
+  min-height: 214px;
+}
+
+.forecast-chart-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(140px, 0.8fr);
+  gap: 14px;
+  align-items: center;
+  margin: 12px 0;
 }
 
 .sparkline {
-  position: relative;
-  height: 58px;
-  margin: 11px 0;
+  display: grid;
+  height: 132px;
   overflow: hidden;
   border-radius: 8px;
+  border: 1px solid rgba(98, 238, 89, 0.22);
   background:
-    linear-gradient(135deg, transparent 0 8%, rgba(72, 255, 109, 0.2) 9% 12%, transparent 13% 20%, rgba(72, 255, 109, 0.28) 21% 24%, transparent 25% 37%, rgba(72, 255, 109, 0.22) 38% 42%, transparent 43% 53%, rgba(72, 255, 109, 0.28) 54% 58%, transparent 59% 72%, rgba(72, 255, 109, 0.18) 73% 77%, transparent 78%),
-    linear-gradient(180deg, rgba(72, 255, 109, 0.2), transparent);
+    linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+    radial-gradient(circle at 80% 20%, rgba(98, 238, 89, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(98, 238, 89, 0.12), rgba(2, 12, 20, 0.2)),
+    rgba(2, 12, 20, 0.45);
+  background-size: 100% 26px, 36px 100%, 100% 100%, 100% 100%, 100% 100%;
+  padding: 10px;
+}
+
+.forecast-copy {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.forecast-copy strong {
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 520;
+}
+
+.forecast-copy span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.mini-chart {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 58px;
+  overflow: visible;
+}
+
+.mini-chart.compact {
+  width: 92px;
+  height: 34px;
+  min-height: 34px;
+  flex: 0 0 92px;
+}
+
+.mini-chart-grid {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+}
+
+.mini-chart-area {
+  fill: rgba(98, 238, 89, 0.13);
+  stroke: none;
+}
+
+.mini-chart-line {
+  fill: none;
+  stroke: var(--green);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 8px rgba(98, 238, 89, 0.65));
+}
+
+.mini-chart-point {
+  fill: var(--green);
+  stroke: rgba(7, 17, 29, 0.95);
+  stroke-width: 1.6;
+  filter: drop-shadow(0 0 5px rgba(98, 238, 89, 0.55));
 }
 
 .confidence-line,
@@ -705,6 +878,7 @@
   .toolbar,
   .metric-grid,
   .filter-grid,
+  .forecast-chart-layout,
   .detail-grid {
     grid-template-columns: 1fr;
   }
@@ -739,10 +913,15 @@
   }
 
   .opportunity-row,
-  .arbitrage-row {
+  .arbitrage-row,
+  .history-row {
     grid-template-columns: 1fr;
     gap: 6px;
     padding: 14px 0;
+  }
+
+  .npc-detail-grid {
+    grid-template-columns: 1fr;
   }
 
   .table-head {

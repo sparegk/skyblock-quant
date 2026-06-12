@@ -61,11 +61,69 @@ type NpcArbitrageItem = {
   collected_at: string
 }
 
+type NpcArbitrageHistoryRow = {
+  collected_at: string
+  bazaar_buy_price: number
+  bazaar_sell_price: number
+  npc_sell_price: number
+  profit_per_item: number
+  profit_margin: number | null
+  buy_volume: number
+  sell_volume: number
+  buy_orders: number
+  sell_orders: number
+  is_profitable: number
+}
+
+type NpcArbitrageDetail = {
+  item_id: string
+  item_name: string
+  category: string | null
+  tier: string | null
+  npc_sell_price: number
+  latest: NpcArbitrageHistoryRow
+  history: NpcArbitrageHistoryRow[]
+  observed_snapshots: number
+  profitable_snapshots: number
+  profit_consistency: number
+}
+
+type InvestmentMomentumItem = {
+  item_id: string
+  item_name: string
+  category: string | null
+  tier: string | null
+  buy_price: number
+  sell_price: number
+  midpoint_price: number
+  buy_volume: number
+  sell_volume: number
+  buy_orders: number
+  sell_orders: number
+  spread: number
+  collected_at: string
+  observed_snapshots: number
+  oldest_midpoint_price: number
+  latest_midpoint_price: number
+  gain_percent: number
+  rising_steps: number
+  max_single_jump: number
+  average_volume: number
+  average_orders: number
+  momentum_score: number
+}
+
 type DetailMetricProps = {
   label: string
   value: ReactNode
   hint: string
   positive?: boolean
+}
+
+type MiniLineChartProps = {
+  values: number[]
+  label: string
+  compact?: boolean
 }
 
 type NpcFilterKey =
@@ -99,6 +157,10 @@ function formatCompact(value: number) {
     maximumFractionDigits: 2,
     notation: 'compact',
   }).format(value)
+}
+
+function formatPercent(value: number) {
+  return `${(value * 100).toFixed(2)}%`
 }
 
 function formatSnapshotTime(value: string | null) {
@@ -161,6 +223,32 @@ function getNpcQualityClass(item: NpcArbitrageItem) {
   }
 
   if (label === 'wide margin') {
+    return 'quality-badge warning'
+  }
+
+  return 'quality-badge'
+}
+
+function getMomentumLabel(item: InvestmentMomentumItem) {
+  if (item.max_single_jump >= 0.2) {
+    return 'quick jump'
+  }
+
+  if (item.rising_steps >= item.observed_snapshots - 1) {
+    return 'steady climb'
+  }
+
+  return 'heating up'
+}
+
+function getMomentumLabelClass(item: InvestmentMomentumItem) {
+  const label = getMomentumLabel(item)
+
+  if (label === 'steady climb') {
+    return 'quality-badge stable'
+  }
+
+  if (label === 'quick jump') {
     return 'quality-badge warning'
   }
 
@@ -243,6 +331,49 @@ function DetailMetric({ label, value, hint, positive = false }: DetailMetricProp
   )
 }
 
+function MiniLineChart({ values, label, compact = false }: MiniLineChartProps) {
+  const cleanValues = values.filter((value) => Number.isFinite(value))
+  const points = cleanValues.length >= 2 ? cleanValues : [0, 0]
+  const min = Math.min(...points)
+  const max = Math.max(...points)
+  const range = max - min || 1
+  const width = compact ? 96 : 260
+  const height = compact ? 34 : 78
+  const padding = compact ? 4 : 8
+  const usableWidth = width - padding * 2
+  const usableHeight = height - padding * 2
+  const coordinates = points.map((value, index) => {
+    const x = padding + (index / Math.max(points.length - 1, 1)) * usableWidth
+    const y = padding + (1 - (value - min) / range) * usableHeight
+    return `${x.toFixed(2)},${y.toFixed(2)}`
+  })
+  const areaCoordinates = [
+    `${padding},${height - padding}`,
+    ...coordinates,
+    `${width - padding},${height - padding}`,
+  ]
+
+  return (
+    <svg
+      className={compact ? 'mini-chart compact' : 'mini-chart'}
+      role="img"
+      aria-label={label}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+    >
+      <polyline className="mini-chart-grid" points={`${padding},${height - padding} ${width - padding},${height - padding}`} />
+      <polygon className="mini-chart-area" points={areaCoordinates.join(' ')} />
+      <polyline className="mini-chart-line" points={coordinates.join(' ')} />
+      {!compact
+        ? coordinates.map((point) => {
+            const [cx, cy] = point.split(',')
+            return <circle className="mini-chart-point" cx={cx} cy={cy} key={point} r="2.8" />
+          })
+        : null}
+    </svg>
+  )
+}
+
 function clampNumber(value: number, min: number, max: number) {
   if (!Number.isFinite(value)) {
     return min
@@ -259,14 +390,70 @@ const defaultNpcFilters: NpcFilters = {
   minProfitableSnapshots: 2,
 }
 
+const npcFilterPresets: Record<'strict' | 'balanced' | 'loose', NpcFilters> = {
+  strict: {
+    minSellVolume: 50_000,
+    minSellOrders: 75,
+    maxProfitMargin: 15,
+    historySnapshots: 5,
+    minProfitableSnapshots: 4,
+  },
+  balanced: defaultNpcFilters,
+  loose: {
+    minSellVolume: 2_500,
+    minSellOrders: 10,
+    maxProfitMargin: 40,
+    historySnapshots: 3,
+    minProfitableSnapshots: 1,
+  },
+}
+
+function getNpcTrend(detail: NpcArbitrageDetail | null) {
+  if (!detail || detail.history.length < 2) {
+    return 'steady'
+  }
+
+  const latest = detail.history[0].profit_per_item
+  const oldest = detail.history[detail.history.length - 1].profit_per_item
+  const movement = latest - oldest
+  const movementRatio = oldest > 0 ? movement / oldest : 0
+
+  if (movementRatio > 0.05) {
+    return 'improving'
+  }
+
+  if (movementRatio < -0.05) {
+    return 'fading'
+  }
+
+  return 'steady'
+}
+
+function getSnapshotAgeMinutes(value: string | null) {
+  if (!value) {
+    return null
+  }
+
+  const timestamp = new Date(value).getTime()
+  if (Number.isNaN(timestamp)) {
+    return null
+  }
+
+  return Math.max(0, Math.floor((Date.now() - timestamp) / 60_000))
+}
+
 function App() {
   const [summary, setSummary] = useState<MarketSummary | null>(null)
   const [items, setItems] = useState<BazaarItem[]>([])
   const [npcArbitrageItems, setNpcArbitrageItems] = useState<NpcArbitrageItem[]>([])
+  const [investmentItems, setInvestmentItems] = useState<InvestmentMomentumItem[]>([])
+  const [selectedNpcItemId, setSelectedNpcItemId] = useState<string | null>(null)
+  const [selectedNpcDetail, setSelectedNpcDetail] = useState<NpcArbitrageDetail | null>(null)
   const [npcFilters, setNpcFilters] = useState<NpcFilters>(defaultNpcFilters)
   const [query, setQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isArbitrageLoading, setIsArbitrageLoading] = useState(true)
+  const [isNpcDetailLoading, setIsNpcDetailLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -275,20 +462,25 @@ function App() {
         setIsLoading(true)
         setError(null)
 
-        const [summaryResponse, itemsResponse] = await Promise.all([
+        const [summaryResponse, itemsResponse, investmentResponse] = await Promise.all([
           fetch(`${API_BASE_URL}/api/bazaar/summary`),
           fetch(`${API_BASE_URL}/api/bazaar/latest?limit=40`),
+          fetch(`${API_BASE_URL}/api/investments/momentum?limit=5`),
         ])
 
-        if (!summaryResponse.ok || !itemsResponse.ok) {
+        if (!summaryResponse.ok || !itemsResponse.ok || !investmentResponse.ok) {
           throw new Error('Backend API request failed.')
         }
 
         const summaryData = (await summaryResponse.json()) as MarketSummary
         const itemsData = (await itemsResponse.json()) as { items: BazaarItem[] }
+        const investmentData = (await investmentResponse.json()) as {
+          items: InvestmentMomentumItem[]
+        }
 
         setSummary(summaryData)
         setItems(itemsData.items)
+        setInvestmentItems(investmentData.items)
       } catch {
         setError('start the backend api to load live bazaar data')
       } finally {
@@ -325,6 +517,13 @@ function App() {
 
         const data = (await response.json()) as { items: NpcArbitrageItem[] }
         setNpcArbitrageItems(data.items)
+        setSelectedNpcItemId((current) => {
+          if (current && data.items.some((item) => item.item_id === current)) {
+            return current
+          }
+
+          return data.items[0]?.item_id ?? null
+        })
       } catch (loadError) {
         if (loadError instanceof DOMException && loadError.name === 'AbortError') {
           return
@@ -343,6 +542,49 @@ function App() {
 
     return () => request.abort()
   }, [npcFilters])
+
+  useEffect(() => {
+    if (!selectedNpcItemId) {
+      setSelectedNpcDetail(null)
+      return
+    }
+
+    const request = new AbortController()
+
+    async function loadNpcDetail() {
+      try {
+        setIsNpcDetailLoading(true)
+        const params = new URLSearchParams({
+          history_snapshots: String(npcFilters.historySnapshots),
+        })
+        const response = await fetch(
+          `${API_BASE_URL}/api/arbitrage/npc/${selectedNpcItemId}?${params}`,
+          { signal: request.signal },
+        )
+
+        if (!response.ok) {
+          throw new Error('NPC arbitrage detail request failed.')
+        }
+
+        const data = (await response.json()) as { item: NpcArbitrageDetail }
+        setSelectedNpcDetail(data.item)
+      } catch (loadError) {
+        if (loadError instanceof DOMException && loadError.name === 'AbortError') {
+          return
+        }
+
+        setSelectedNpcDetail(null)
+      } finally {
+        if (!request.signal.aborted) {
+          setIsNpcDetailLoading(false)
+        }
+      }
+    }
+
+    loadNpcDetail()
+
+    return () => request.abort()
+  }, [npcFilters.historySnapshots, selectedNpcItemId])
 
   function updateNpcFilter(filter: NpcFilterKey, value: number) {
     setNpcFilters((current) => {
@@ -364,6 +606,10 @@ function App() {
           : {}),
       }
     })
+  }
+
+  function applyNpcFilters(filters: NpcFilters) {
+    setNpcFilters(filters)
   }
 
   const rankedItems = useMemo(
@@ -388,6 +634,10 @@ function App() {
   const marketScore = featuredItem ? Math.min(scoreItem(featuredItem), 99) : 0
   const totalOpportunities = rankedItems.filter((item) => spreadPercent(item) > 1).length
   const bestNpcProfit = npcArbitrageItems[0]?.profit_per_item ?? 0
+  const selectedNpcItem =
+    npcArbitrageItems.find((item) => item.item_id === selectedNpcItemId) ?? null
+  const snapshotAgeMinutes = getSnapshotAgeMinutes(summary?.latest_snapshot ?? null)
+  const isSnapshotStale = snapshotAgeMinutes !== null && snapshotAgeMinutes > 20
   const topRankings = rankedItems.slice(0, 3)
   const alertItems = rankedItems.slice(0, 3)
   const averageSpread =
@@ -395,10 +645,18 @@ function App() {
       ? rankedItems.reduce((sum, item) => sum + Math.max(spreadPercent(item), 0), 0) /
         rankedItems.length
       : 0
-  const totalVolume = rankedItems.reduce(
-    (sum, item) => sum + item.buy_volume + item.sell_volume,
-    0,
-  )
+  const stableNpcFlips = npcArbitrageItems.filter(
+    (item) => item.profit_consistency >= 0.75 && item.sell_volume >= 20_000,
+  ).length
+  const forecastChartValues =
+    investmentItems.length > 0
+      ? investmentItems.map((item) => item.momentum_score)
+      : rankedItems.slice(0, 8).map((item) => scoreItem(item))
+  const selectedNpcProfitChart =
+    selectedNpcDetail?.history
+      .slice()
+      .reverse()
+      .map((row) => row.profit_per_item) ?? []
 
   return (
     <div className="dashboard">
@@ -491,7 +749,7 @@ function App() {
               <Sparkles size={30} />
             </div>
             <div>
-              <span>arbitrage candidates</span>
+              <span>bazaar flips</span>
               <strong>{npcArbitrageItems.length || totalOpportunities}</strong>
               <p>
                 {bestNpcProfit > 0
@@ -515,9 +773,13 @@ function App() {
               <LineChart size={30} />
             </div>
             <div>
-              <span>market volume</span>
-              <strong>{formatCompact(totalVolume)}</strong>
-              <p>{summary ? `${formatNumber(summary.total_rows)} saved rows` : 'loading'}</p>
+              <span>stable npc flips</span>
+              <strong>{stableNpcFlips}</strong>
+              <p>
+                {npcArbitrageItems.length > 0
+                  ? `${npcArbitrageItems.length} filtered flips`
+                  : 'waiting for arbitrage data'}
+              </p>
             </div>
           </article>
         </section>
@@ -628,6 +890,21 @@ function App() {
                 <span>{isArbitrageLoading ? 'updating' : 'liquidity filtered'}</span>
               </div>
 
+              <div className="filter-actions" aria-label="npc arbitrage presets">
+                <button type="button" onClick={() => applyNpcFilters(npcFilterPresets.strict)}>
+                  strict
+                </button>
+                <button type="button" onClick={() => applyNpcFilters(npcFilterPresets.balanced)}>
+                  balanced
+                </button>
+                <button type="button" onClick={() => applyNpcFilters(npcFilterPresets.loose)}>
+                  loose
+                </button>
+                <button type="button" onClick={() => applyNpcFilters(defaultNpcFilters)}>
+                  reset
+                </button>
+              </div>
+
               <div className="filter-grid" aria-label="npc arbitrage filters">
                 <label>
                   <span>min volume</span>
@@ -707,7 +984,16 @@ function App() {
                     <span>hist. profit</span>
                   </div>
                   {npcArbitrageItems.slice(0, 5).map((item, index) => (
-                    <div className="arbitrage-row" key={item.item_id}>
+                    <button
+                      className={
+                        selectedNpcItemId === item.item_id
+                          ? 'arbitrage-row selected'
+                          : 'arbitrage-row'
+                      }
+                      key={item.item_id}
+                      type="button"
+                      onClick={() => setSelectedNpcItemId(item.item_id)}
+                    >
                       <span>{index + 1}</span>
                       <span className="arbitrage-item-cell">
                         <b>{item.item_name}</b>
@@ -722,7 +1008,7 @@ function App() {
                       <span>{formatCompact(item.npc_sell_price)}</span>
                       <span className="positive">{formatCompact(item.profit_per_item)}</span>
                       <span>{formatCompact(item.history_adjusted_profit)}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               ) : (
@@ -730,20 +1016,131 @@ function App() {
                   run the item metadata collector to calculate npc arbitrage.
                 </p>
               )}
+
+              {selectedNpcItem ? (
+                <div className="npc-detail-panel">
+                  <div className="panel-heading compact-heading">
+                    <div>
+                      <h3>{selectedNpcItem.item_name}</h3>
+                      <span>{selectedNpcItem.item_id}</span>
+                    </div>
+                    <span className={getNpcQualityClass(selectedNpcItem)}>
+                      {getNpcQualityLabel(selectedNpcItem)}
+                    </span>
+                  </div>
+
+                  {isNpcDetailLoading ? (
+                    <p className="empty-state">loading item history...</p>
+                  ) : selectedNpcDetail ? (
+                    <>
+                      <div className="npc-detail-grid">
+                        <DetailMetric
+                          label="trend"
+                          value={getNpcTrend(selectedNpcDetail)}
+                          hint="recent profit direction"
+                          positive={getNpcTrend(selectedNpcDetail) === 'improving'}
+                        />
+                        <DetailMetric
+                          label="consistency"
+                          value={`${selectedNpcDetail.profitable_snapshots} / ${selectedNpcDetail.observed_snapshots}`}
+                          hint="profitable snapshots"
+                          positive={selectedNpcDetail.profit_consistency >= 0.75}
+                        />
+                        <DetailMetric
+                          label="latest profit"
+                          value={formatCompact(selectedNpcDetail.latest.profit_per_item)}
+                          hint="coins per item"
+                          positive={selectedNpcDetail.latest.profit_per_item > 0}
+                        />
+                      </div>
+
+                      <div className="history-table">
+                        <MiniLineChart
+                          label={`${selectedNpcItem.item_name} npc profit history`}
+                          values={selectedNpcProfitChart}
+                        />
+                        {selectedNpcDetail.history.slice(0, 5).map((row) => (
+                          <div className="history-row" key={row.collected_at}>
+                            <span>{formatSnapshotTime(row.collected_at)}</span>
+                            <b className={row.is_profitable ? 'positive' : ''}>
+                              {formatCompact(row.profit_per_item)}
+                            </b>
+                            <span>{formatCompact(row.sell_volume)} volume</span>
+                            <span>{formatNumber(row.sell_orders)} orders</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="empty-state">no recent history for this item.</p>
+                  )}
+                </div>
+              ) : null}
             </article>
           </div>
 
           <aside className="right-column">
             <article className="panel forecast-panel">
               <h2>forecast snapshot</h2>
-              <div className="sparkline" aria-hidden="true">
-                <span />
+              <div className="forecast-chart-layout">
+                <div className="sparkline">
+                  <MiniLineChart label="investment momentum forecast" values={forecastChartValues} />
+                </div>
+                <div className="forecast-copy">
+                  <strong>
+                    {investmentItems[0] ? `${formatPercent(investmentItems[0].gain_percent)} top climb` : 'building signal'}
+                  </strong>
+                  <span>
+                    {investmentItems[0]
+                      ? `${investmentItems[0].item_name} leads recent bazaar momentum.`
+                      : 'collect more snapshots for stronger price trends.'}
+                  </span>
+                </div>
               </div>
-              <p>prices with high liquidity and positive spreads are prioritized for review.</p>
+              <p>
+                {isSnapshotStale && snapshotAgeMinutes !== null
+                  ? `latest snapshot is ${formatCompact(snapshotAgeMinutes)} minutes old.`
+                  : 'prices with high liquidity and positive spreads are prioritized for review.'}
+              </p>
               <div className="confidence-line">
                 <span className="score-badge">{marketScore}</span>
                 <strong>baseline confidence</strong>
               </div>
+            </article>
+
+            <article className="panel compact-panel">
+              <div className="panel-heading">
+                <h2>items heating up</h2>
+                <span>price momentum</span>
+              </div>
+              {investmentItems.length > 0 ? (
+                investmentItems.map((item, index) => (
+                  <div className="ranking-card" key={item.item_id}>
+                    <span className="rank-number">{index + 1}</span>
+                    <div>
+                      <b>{item.item_name}</b>
+                      <small>
+                        {formatPercent(item.gain_percent)} gain ·{' '}
+                        {formatCompact(item.average_volume)} volume
+                      </small>
+                    </div>
+                    <MiniLineChart
+                      compact
+                      label={`${item.item_name} price climb`}
+                      values={[
+                        item.oldest_midpoint_price,
+                        (item.oldest_midpoint_price + item.latest_midpoint_price) / 2,
+                        item.latest_midpoint_price,
+                      ]}
+                    />
+                    <span className={getMomentumLabelClass(item)}>
+                      {getMomentumLabel(item)}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="empty-state">waiting for more price history.</p>
+              )}
             </article>
 
             <article className="panel compact-panel">
@@ -784,7 +1181,7 @@ function App() {
                 <FileText size={16} />
                 <div>
                   <b>liquidity review</b>
-                  <small>npc candidates must persist across recent snapshots</small>
+                  <small>npc flips must hold across recent snapshots</small>
                 </div>
               </div>
               <div className="insight-row">

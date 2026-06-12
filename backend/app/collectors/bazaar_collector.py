@@ -44,6 +44,18 @@ def create_tables(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_bazaar_snapshots_collected_at
+        ON bazaar_snapshots (collected_at)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_bazaar_snapshots_item_history
+        ON bazaar_snapshots (item_id, collected_at DESC)
+        """
+    )
     connection.commit()
 
 

@@ -9,10 +9,18 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import (
     MAX_NPC_ARBITRAGE_MARGIN,
+    MAX_MOMENTUM_SINGLE_JUMP,
+    MIN_MOMENTUM_GAIN,
+    MIN_MOMENTUM_OBSERVED_SNAPSHOTS,
+    MIN_MOMENTUM_ORDERS,
+    MIN_MOMENTUM_RISING_STEPS,
+    MIN_MOMENTUM_VOLUME,
     MIN_NPC_ARBITRAGE_PROFITABLE_SNAPSHOTS,
     MIN_NPC_ARBITRAGE_SELL_ORDERS,
     MIN_NPC_ARBITRAGE_SELL_VOLUME,
+    MOMENTUM_HISTORY_SNAPSHOTS,
     NPC_ARBITRAGE_HISTORY_SNAPSHOTS,
+    get_investment_momentum,
     get_latest_snapshot,
     get_market_summary,
     get_npc_arbitrage,
@@ -106,3 +114,30 @@ def npc_arbitrage_detail(
         raise HTTPException(status_code=404, detail="NPC arbitrage item not found.")
 
     return {"item": item}
+
+
+@app.get("/api/investments/momentum")
+def investment_momentum(
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    history_snapshots: Annotated[int, Query(ge=2, le=100)] = MOMENTUM_HISTORY_SNAPSHOTS,
+    min_observed_snapshots: Annotated[int, Query(ge=2, le=100)] = (
+        MIN_MOMENTUM_OBSERVED_SNAPSHOTS
+    ),
+    min_volume: Annotated[int, Query(ge=0, le=100_000_000)] = MIN_MOMENTUM_VOLUME,
+    min_orders: Annotated[int, Query(ge=0, le=100_000)] = MIN_MOMENTUM_ORDERS,
+    min_gain: Annotated[float, Query(ge=0, le=10)] = MIN_MOMENTUM_GAIN,
+    max_single_jump: Annotated[float, Query(ge=0, le=10)] = MAX_MOMENTUM_SINGLE_JUMP,
+    min_rising_steps: Annotated[int, Query(ge=1, le=100)] = MIN_MOMENTUM_RISING_STEPS,
+) -> dict[str, object]:
+    return {
+        "items": get_investment_momentum(
+            limit=limit,
+            history_snapshots=history_snapshots,
+            min_observed_snapshots=min_observed_snapshots,
+            min_volume=min_volume,
+            min_orders=min_orders,
+            min_gain=min_gain,
+            max_single_jump=max_single_jump,
+            min_rising_steps=min_rising_steps,
+        )
+    }

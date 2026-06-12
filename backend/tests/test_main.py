@@ -46,6 +46,31 @@ class ApiRouteTests(unittest.TestCase):
 
         self.assertEqual(404, error.exception.status_code)
 
+    def test_investment_momentum_passes_filter_query_params(self) -> None:
+        with patch("app.main.get_investment_momentum", return_value=[]) as momentum:
+            response = main.investment_momentum(
+                limit=6,
+                history_snapshots=4,
+                min_observed_snapshots=3,
+                min_volume=25_000,
+                min_orders=50,
+                min_gain=0.04,
+                max_single_jump=0.25,
+                min_rising_steps=2,
+            )
+
+        self.assertEqual({"items": []}, response)
+        momentum.assert_called_once_with(
+            limit=6,
+            history_snapshots=4,
+            min_observed_snapshots=3,
+            min_volume=25_000,
+            min_orders=50,
+            min_gain=0.04,
+            max_single_jump=0.25,
+            min_rising_steps=2,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

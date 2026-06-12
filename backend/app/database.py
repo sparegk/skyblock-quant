@@ -16,6 +16,13 @@ MAX_NPC_ARBITRAGE_MARGIN = 0.25
 NPC_ARBITRAGE_VOLUME_CAP = 10_000
 NPC_ARBITRAGE_HISTORY_SNAPSHOTS = 5
 MIN_NPC_ARBITRAGE_PROFITABLE_SNAPSHOTS = 2
+MOMENTUM_HISTORY_SNAPSHOTS = 5
+MIN_MOMENTUM_OBSERVED_SNAPSHOTS = 3
+MIN_MOMENTUM_VOLUME = 10_000
+MIN_MOMENTUM_ORDERS = 25
+MIN_MOMENTUM_GAIN = 0.03
+MAX_MOMENTUM_SINGLE_JUMP = 0.35
+MIN_MOMENTUM_RISING_STEPS = 2
 
 
 def get_connection() -> sqlite3.Connection:
@@ -424,3 +431,174 @@ def get_npc_arbitrage_detail(
         "profitable_snapshots": profitable_snapshots,
         "profit_consistency": profitable_snapshots / len(history),
     }
+
+
+def get_investment_momentum(
+    limit: int = 25,
+    history_snapshots: int = MOMENTUM_HISTORY_SNAPSHOTS,
+    min_observed_snapshots: int = MIN_MOMENTUM_OBSERVED_SNAPSHOTS,
+    min_volume: int = MIN_MOMENTUM_VOLUME,
+    min_orders: int = MIN_MOMENTUM_ORDERS,
+    min_gain: float = MIN_MOMENTUM_GAIN,
+    max_single_jump: float = MAX_MOMENTUM_SINGLE_JUMP,
+    min_rising_steps: int = MIN_MOMENTUM_RISING_STEPS,
+) -> list[dict[str, Any]]:
+    """Return Bazaar items with recent price momentum and enough liquidity."""
+    if not database_exists():
+        return []
+
+    with closing(get_connection()) as connection:
+        rows = connection.execute(
+            """
+            WITH recent_snapshots AS (
+                SELECT DISTINCT collected_at
+                FROM bazaar_snapshots
+                ORDER BY collected_at DESC
+                LIMIT ?
+            ),
+            base_prices AS (
+                SELECT
+                    snapshots.item_id,
+                    snapshots.collected_at,
+                    snapshots.buy_price,
+                    snapshots.sell_price,
+                    (snapshots.buy_price + snapshots.sell_price) / 2.0 AS midpoint_price,
+                    snapshots.buy_volume,
+                    snapshots.sell_volume,
+                    snapshots.buy_orders,
+                    snapshots.sell_orders,
+                    snapshots.spread
+                FROM bazaar_snapshots AS snapshots
+                INNER JOIN recent_snapshots
+                    ON recent_snapshots.collected_at = snapshots.collected_at
+                WHERE snapshots.buy_price > 0
+                AND snapshots.sell_price > 0
+            ),
+            priced AS (
+                SELECT
+                    base_prices.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY item_id
+                        ORDER BY collected_at ASC
+                    ) AS oldest_rank,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY item_id
+                        ORDER BY collected_at DESC
+                    ) AS latest_rank,
+                    COUNT(*) OVER (
+                        PARTITION BY item_id
+                    ) AS observed_snapshots,
+                    LAG(midpoint_price) OVER (
+                        PARTITION BY item_id
+                        ORDER BY collected_at ASC
+                    ) AS previous_midpoint_price
+                FROM base_prices
+            ),
+            momentum AS (
+                SELECT
+                    item_id,
+                    observed_snapshots,
+                    MAX(
+                        CASE
+                            WHEN oldest_rank = 1 THEN midpoint_price
+                            ELSE NULL
+                        END
+                    ) AS oldest_midpoint_price,
+                    MAX(
+                        CASE
+                            WHEN latest_rank = 1 THEN midpoint_price
+                            ELSE NULL
+                        END
+                    ) AS latest_midpoint_price,
+                    SUM(
+                        CASE
+                            WHEN previous_midpoint_price IS NOT NULL
+                                AND midpoint_price > previous_midpoint_price
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS rising_steps,
+                    MAX(
+                        CASE
+                            WHEN previous_midpoint_price > 0
+                            THEN (midpoint_price - previous_midpoint_price)
+                                / previous_midpoint_price
+                            ELSE 0
+                        END
+                    ) AS max_single_jump,
+                    AVG(buy_volume + sell_volume) AS average_volume,
+                    AVG(buy_orders + sell_orders) AS average_orders
+                FROM priced
+                GROUP BY item_id
+            ),
+            latest AS (
+                SELECT *
+                FROM priced
+                WHERE latest_rank = 1
+            )
+            SELECT
+                latest.item_id,
+                COALESCE(items.item_name, latest.item_id) AS item_name,
+                items.category,
+                items.tier,
+                latest.buy_price,
+                latest.sell_price,
+                latest.midpoint_price,
+                latest.buy_volume,
+                latest.sell_volume,
+                latest.buy_orders,
+                latest.sell_orders,
+                latest.spread,
+                latest.collected_at,
+                momentum.observed_snapshots,
+                momentum.oldest_midpoint_price,
+                momentum.latest_midpoint_price,
+                (
+                    momentum.latest_midpoint_price - momentum.oldest_midpoint_price
+                ) / momentum.oldest_midpoint_price AS gain_percent,
+                momentum.rising_steps,
+                momentum.max_single_jump,
+                momentum.average_volume,
+                momentum.average_orders,
+                (
+                    (
+                        momentum.latest_midpoint_price - momentum.oldest_midpoint_price
+                    ) / momentum.oldest_midpoint_price
+                ) * (momentum.average_volume / 1000.0 + momentum.average_orders)
+                    AS momentum_score
+            FROM latest
+            INNER JOIN momentum
+                ON momentum.item_id = latest.item_id
+            LEFT JOIN items
+                ON items.item_id = latest.item_id
+            WHERE momentum.observed_snapshots >= ?
+            AND latest.buy_volume + latest.sell_volume >= ?
+            AND latest.buy_orders + latest.sell_orders >= ?
+            AND momentum.average_volume >= ?
+            AND momentum.average_orders >= ?
+            AND (
+                momentum.latest_midpoint_price - momentum.oldest_midpoint_price
+            ) / momentum.oldest_midpoint_price >= ?
+            AND momentum.max_single_jump <= ?
+            AND momentum.rising_steps >= ?
+            ORDER BY
+                momentum_score DESC,
+                gain_percent DESC,
+                momentum.average_volume DESC
+            LIMIT ?
+            """,
+            (
+                history_snapshots,
+                min_observed_snapshots,
+                min_volume,
+                min_orders,
+                min_volume,
+                min_orders,
+                min_gain,
+                max_single_jump,
+                min_rising_steps,
+                limit,
+            ),
+        ).fetchall()
+
+    return [dict(row) for row in rows]

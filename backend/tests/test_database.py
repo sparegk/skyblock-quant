@@ -102,6 +102,27 @@ class NpcArbitrageTests(unittest.TestCase):
     def test_returns_none_for_missing_npc_arbitrage_detail(self) -> None:
         self.assertIsNone(database.get_npc_arbitrage_detail("missing"))
 
+    def test_returns_steady_investment_momentum(self) -> None:
+        rows = database.get_investment_momentum(
+            limit=10,
+            history_snapshots=3,
+            min_volume=10_000,
+            min_orders=25,
+            min_gain=0.03,
+            max_single_jump=0.35,
+            min_rising_steps=2,
+        )
+        item_ids = [row["item_id"] for row in rows]
+
+        self.assertIn("STEADY_RISE", item_ids)
+        self.assertNotIn("ONE_PUMP", item_ids)
+        self.assertNotIn("LOW_VOLUME_INVEST", item_ids)
+
+        steady_rise = self._find_item(rows, "STEADY_RISE")
+        self.assertEqual(3, steady_rise["observed_snapshots"])
+        self.assertEqual(2, steady_rise["rising_steps"])
+        self.assertGreaterEqual(steady_rise["gain_percent"], 0.03)
+
     def _find_item(
         self, rows: list[dict[str, object]], item_id: str
     ) -> dict[str, object]:
@@ -146,6 +167,45 @@ class NpcArbitrageTests(unittest.TestCase):
                 ("2026-06-12T13:30:00Z", "LOW_MARGIN", 100, 97, 50_000, 100_000, 100, 100, 3),
                 ("2026-06-12T14:00:00Z", "HIGH_ESTIMATED", 100, 90, 50_000, 30_000, 100, 100, 10),
                 ("2026-06-12T14:00:00Z", "LOW_MARGIN", 100, 95, 50_000, 100_000, 100, 100, 5),
+                ("2026-06-12T13:00:00Z", "STEADY_RISE", 100, 104, 80_000, 90_000, 120, 130, -4),
+                ("2026-06-12T13:30:00Z", "STEADY_RISE", 104, 108, 82_000, 91_000, 125, 132, -4),
+                ("2026-06-12T14:00:00Z", "STEADY_RISE", 108, 112, 85_000, 93_000, 130, 135, -4),
+                ("2026-06-12T13:00:00Z", "ONE_PUMP", 100, 104, 80_000, 90_000, 120, 130, -4),
+                ("2026-06-12T13:30:00Z", "ONE_PUMP", 101, 105, 82_000, 91_000, 125, 132, -4),
+                ("2026-06-12T14:00:00Z", "ONE_PUMP", 190, 200, 85_000, 93_000, 130, 135, -10),
+                (
+                    "2026-06-12T13:00:00Z",
+                    "LOW_VOLUME_INVEST",
+                    100,
+                    104,
+                    1_000,
+                    1_200,
+                    120,
+                    130,
+                    -4,
+                ),
+                (
+                    "2026-06-12T13:30:00Z",
+                    "LOW_VOLUME_INVEST",
+                    104,
+                    108,
+                    1_100,
+                    1_300,
+                    125,
+                    132,
+                    -4,
+                ),
+                (
+                    "2026-06-12T14:00:00Z",
+                    "LOW_VOLUME_INVEST",
+                    108,
+                    112,
+                    1_200,
+                    1_400,
+                    130,
+                    135,
+                    -4,
+                ),
                 ("2026-06-12T14:00:00Z", "LOW_VOLUME", 100, 90, 50_000, 9_999, 100, 100, 10),
                 ("2026-06-12T14:00:00Z", "LOW_ORDERS", 100, 90, 50_000, 30_000, 100, 24, 10),
                 (
@@ -199,6 +259,9 @@ class NpcArbitrageTests(unittest.TestCase):
                 ("ONE_SNAPSHOT_SPIKE", "One Snapshot Spike", "test", "COMMON", 100),
                 ("HIGH_MARGIN_OUTLIER", "High Margin Outlier", "test", "COMMON", 100),
                 ("NO_PROFIT", "No Profit", "test", "COMMON", 100),
+                ("STEADY_RISE", "Steady Rise", "test", "RARE", None),
+                ("ONE_PUMP", "One Pump", "test", "RARE", None),
+                ("LOW_VOLUME_INVEST", "Low Volume Invest", "test", "RARE", None),
             ]
             connection.executemany(
                 """
