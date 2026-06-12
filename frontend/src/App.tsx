@@ -48,7 +48,12 @@ type NpcArbitrageItem = {
   profit_per_item: number
   profit_margin: number
   estimated_profit: number
+  history_adjusted_profit: number
   liquidity_score: number
+  observed_snapshots: number
+  profitable_snapshots: number
+  average_profit_per_item: number
+  profit_consistency: number
   buy_volume: number
   sell_volume: number
   buy_orders: number
@@ -512,7 +517,7 @@ function App() {
                     <span>bazaar buy</span>
                     <span>npc sell</span>
                     <span>profit</span>
-                    <span>est. profit</span>
+                    <span>hist. profit</span>
                   </div>
                   {npcArbitrageItems.slice(0, 5).map((item, index) => (
                     <div className="arbitrage-row" key={item.item_id}>
@@ -524,7 +529,7 @@ function App() {
                       <span>{formatCompact(item.bazaar_buy_price)}</span>
                       <span>{formatCompact(item.npc_sell_price)}</span>
                       <span className="positive">{formatCompact(item.profit_per_item)}</span>
-                      <span>{formatCompact(item.estimated_profit)}</span>
+                      <span>{formatCompact(item.history_adjusted_profit)}</span>
                     </div>
                   ))}
                 </div>
@@ -587,7 +592,7 @@ function App() {
                 <FileText size={16} />
                 <div>
                   <b>liquidity review</b>
-                  <small>npc candidates require sell-side depth and active orders</small>
+                  <small>npc candidates must persist across recent snapshots</small>
                 </div>
               </div>
               <div className="insight-row">

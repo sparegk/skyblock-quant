@@ -9,8 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import (
     MAX_NPC_ARBITRAGE_MARGIN,
+    MIN_NPC_ARBITRAGE_PROFITABLE_SNAPSHOTS,
     MIN_NPC_ARBITRAGE_SELL_ORDERS,
     MIN_NPC_ARBITRAGE_SELL_VOLUME,
+    NPC_ARBITRAGE_HISTORY_SNAPSHOTS,
     get_latest_snapshot,
     get_market_summary,
     get_npc_arbitrage,
@@ -75,6 +77,10 @@ def npc_arbitrage(
         MIN_NPC_ARBITRAGE_SELL_ORDERS
     ),
     max_profit_margin: Annotated[float, Query(gt=0, le=10)] = MAX_NPC_ARBITRAGE_MARGIN,
+    history_snapshots: Annotated[int, Query(ge=1, le=100)] = NPC_ARBITRAGE_HISTORY_SNAPSHOTS,
+    min_profitable_snapshots: Annotated[int, Query(ge=1, le=100)] = (
+        MIN_NPC_ARBITRAGE_PROFITABLE_SNAPSHOTS
+    ),
 ) -> dict[str, object]:
     return {
         "items": get_npc_arbitrage(
@@ -82,5 +88,7 @@ def npc_arbitrage(
             min_sell_volume=min_sell_volume,
             min_sell_orders=min_sell_orders,
             max_profit_margin=max_profit_margin,
+            history_snapshots=history_snapshots,
+            min_profitable_snapshots=min_profitable_snapshots,
         )
     }
