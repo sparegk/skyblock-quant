@@ -4,7 +4,7 @@
 
 Build an event-driven market intelligence and signal engine for Hypixel SkyBlock items.
 
-The system should help identify Bazaar or Auction House items that may be profitable to buy, hold, flip, or sell to NPCs. It should combine finance-style market analysis with computer science techniques such as APIs, data pipelines, time-series modeling, NLP, backtesting, and Discord notifications.
+The system should help identify Bazaar or Auction House items that may be profitable to buy, hold, flip, or sell to NPCs. It should combine finance-style market analysis with computer science techniques such as APIs, data pipelines, time-series modeling, NLP, backtesting, and dashboard-based reporting.
 
 This should not be an auto-trading bot. It should be an analytics and recommendation tool that gives signals, explanations, and risk estimates.
 
@@ -292,44 +292,6 @@ This turns the project from a simple alert bot into a real market prediction and
 
 ---
 
-## Discord Bot
-
-A Discord bot can be used for notifications and interaction.
-
-Possible commands:
-
-```text
-/signal item:<item_name>
-/top-opportunities
-/npc-arbitrage
-/watch item:<item_name>
-/portfolio-risk
-/backtest item:<item_name>
-/market-summary
-/event-impact event:<event_name>
-```
-
-Example alert:
-
-```text
-Investment Signal: BUY WATCH
-Item: Example Item
-Expected Move: +6% to +10% over 24h
-Confidence: 74%
-Risk: Medium
-Reason:
-- Mentioned in recent update
-- Volume spike detected
-- Sell depth is low
-- Similar historical events produced positive returns
-```
-
-Discord should be used mainly for alerting and user interaction.
-
-If Discord servers are used as a data source, the data should be treated as unverified community intel. Avoid scraping Discord messages without permission. Use official APIs and respect Discord's terms.
-
----
-
 ## Use of Bazaar Meta and SkyBlock Finance
 
 Reference links:
@@ -389,7 +351,6 @@ Hypixel SkyBlock news and patch notes
 Hypixel forums
 SkyBlock Wiki item data
 CoflNet / SkyCofl historical auction and market data, if terms allow
-User-submitted Discord intel, only with permission
 ```
 
 Important: use official or permitted data sources whenever possible.
@@ -418,9 +379,6 @@ Data/ML:
 Frontend:
 - Next.js or React dashboard
 - charts for price, volume, spread, and backtest results
-
-Bot:
-- discord.py or nextcord
 
 Deployment:
 - Docker
@@ -515,7 +473,7 @@ Deliverables:
 ranked list of NPC arbitrage opportunities
 profit and volume estimates
 risk filters
-Discord alert for high-profit opportunities
+dashboard view for high-profit opportunities
 ```
 
 ### Phase 3: Backtesting Framework
@@ -558,7 +516,7 @@ LightGBM/XGBoost model
 explainable signal output
 ```
 
-### Phase 6: Dashboard + Discord Bot
+### Phase 6: Dashboard
 
 Make the system usable.
 
@@ -566,7 +524,6 @@ Deliverables:
 
 ```text
 web dashboard
-Discord commands
 watchlist alerts
 risk-adjusted signal rankings
 ```
@@ -602,7 +559,6 @@ natural language processing
 backtesting
 database design
 dashboard development
-bot development
 software architecture
 ```
 
@@ -668,7 +624,7 @@ event-driven prediction
 explainable recommendations
 risk-adjusted opportunity ranking
 backtested signal performance
-Discord-based alerts
+dashboard-based monitoring
 ```
 
 One-sentence pitch:
@@ -688,7 +644,7 @@ The first useful version should do this:
 2. Store time-series snapshots.
 3. Detect Bazaar-to-NPC profit opportunities.
 4. Rank opportunities by profit, volume, and risk.
-5. Send Discord alerts.
+5. Display high-priority opportunities in the dashboard.
 6. Log every signal for later backtesting.
 ```
 
