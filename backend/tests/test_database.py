@@ -86,6 +86,22 @@ class NpcArbitrageTests(unittest.TestCase):
 
         self.assertEqual([], database.get_npc_arbitrage())
 
+    def test_returns_npc_arbitrage_detail_history(self) -> None:
+        item = database.get_npc_arbitrage_detail("high_estimated", history_snapshots=2)
+
+        self.assertIsNotNone(item)
+        assert item is not None
+        self.assertEqual("HIGH_ESTIMATED", item["item_id"])
+        self.assertEqual(2, item["observed_snapshots"])
+        self.assertEqual(2, item["profitable_snapshots"])
+        self.assertEqual(1.0, item["profit_consistency"])
+        self.assertEqual(2, len(item["history"]))
+        self.assertEqual("2026-06-12T14:00:00Z", item["latest"]["collected_at"])
+        self.assertEqual(90.0, item["latest"]["bazaar_buy_price"])
+
+    def test_returns_none_for_missing_npc_arbitrage_detail(self) -> None:
+        self.assertIsNone(database.get_npc_arbitrage_detail("missing"))
+
     def _find_item(
         self, rows: list[dict[str, object]], item_id: str
     ) -> dict[str, object]:

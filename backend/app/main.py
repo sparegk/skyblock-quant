@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import (
@@ -16,6 +16,7 @@ from app.database import (
     get_latest_snapshot,
     get_market_summary,
     get_npc_arbitrage,
+    get_npc_arbitrage_detail,
     get_top_spreads,
     search_items,
 )
@@ -92,3 +93,16 @@ def npc_arbitrage(
             min_profitable_snapshots=min_profitable_snapshots,
         )
     }
+
+
+@app.get("/api/arbitrage/npc/{item_id}")
+def npc_arbitrage_detail(
+    item_id: str,
+    history_snapshots: Annotated[int, Query(ge=1, le=100)] = NPC_ARBITRAGE_HISTORY_SNAPSHOTS,
+) -> dict[str, object]:
+    item = get_npc_arbitrage_detail(item_id, history_snapshots)
+
+    if item is None:
+        raise HTTPException(status_code=404, detail="NPC arbitrage item not found.")
+
+    return {"item": item}

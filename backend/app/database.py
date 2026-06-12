@@ -331,3 +331,96 @@ def get_npc_arbitrage(
         ).fetchall()
 
     return [dict(row) for row in rows]
+
+
+def get_npc_arbitrage_detail(
+    item_id: str,
+    history_snapshots: int = NPC_ARBITRAGE_HISTORY_SNAPSHOTS,
+) -> dict[str, Any] | None:
+    """Return metadata and recent NPC arbitrage history for one Bazaar item."""
+    if not database_exists():
+        return None
+
+    normalized_item_id = item_id.strip().upper()
+    if not normalized_item_id:
+        return None
+
+    with closing(get_connection()) as connection:
+        table_exists = connection.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+            AND name = 'items'
+            """
+        ).fetchone()
+
+        if table_exists is None:
+            return None
+
+        item = connection.execute(
+            """
+            SELECT
+                items.item_id,
+                items.item_name,
+                items.category,
+                items.tier,
+                items.npc_sell_price
+            FROM items
+            WHERE items.item_id = ?
+            """,
+            (normalized_item_id,),
+        ).fetchone()
+
+        if item is None:
+            return None
+
+        history_rows = connection.execute(
+            """
+            SELECT
+                snapshots.collected_at,
+                snapshots.sell_price AS bazaar_buy_price,
+                snapshots.buy_price AS bazaar_sell_price,
+                items.npc_sell_price,
+                items.npc_sell_price - snapshots.sell_price AS profit_per_item,
+                CASE
+                    WHEN snapshots.sell_price > 0
+                    THEN (items.npc_sell_price - snapshots.sell_price) / snapshots.sell_price
+                    ELSE NULL
+                END AS profit_margin,
+                snapshots.buy_volume,
+                snapshots.sell_volume,
+                snapshots.buy_orders,
+                snapshots.sell_orders,
+                CASE
+                    WHEN items.npc_sell_price > 0
+                        AND snapshots.sell_price > 0
+                        AND items.npc_sell_price - snapshots.sell_price > 0
+                    THEN 1
+                    ELSE 0
+                END AS is_profitable
+            FROM bazaar_snapshots AS snapshots
+            INNER JOIN items
+                ON items.item_id = snapshots.item_id
+            WHERE snapshots.item_id = ?
+            ORDER BY snapshots.collected_at DESC
+            LIMIT ?
+            """,
+            (normalized_item_id, history_snapshots),
+        ).fetchall()
+
+    history = [dict(row) for row in history_rows]
+    if not history:
+        return None
+
+    latest = history[0]
+    profitable_snapshots = sum(row["is_profitable"] for row in history)
+
+    return {
+        **dict(item),
+        "latest": latest,
+        "history": history,
+        "observed_snapshots": len(history),
+        "profitable_snapshots": profitable_snapshots,
+        "profit_consistency": profitable_snapshots / len(history),
+    }

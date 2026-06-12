@@ -68,6 +68,15 @@ type DetailMetricProps = {
   positive?: boolean
 }
 
+type NpcFilterKey =
+  | 'minSellVolume'
+  | 'minSellOrders'
+  | 'maxProfitMargin'
+  | 'historySnapshots'
+  | 'minProfitableSnapshots'
+
+type NpcFilters = Record<NpcFilterKey, number>
+
 const navItems = [
   { label: 'home', icon: Home, active: true },
   { label: 'markets', icon: Boxes },
@@ -126,6 +135,36 @@ function scoreItem(item: BazaarItem) {
   const spreadScore = Math.min(Math.max(spreadPercent(item), 0), 35)
   const orderScore = Math.min((item.buy_orders + item.sell_orders) / 40, 25)
   return Math.round(liquidity + spreadScore + orderScore)
+}
+
+function getNpcQualityLabel(item: NpcArbitrageItem) {
+  if (item.profit_consistency < 0.75) {
+    return 'not steady'
+  }
+
+  if (item.profit_margin >= 0.2) {
+    return 'wide margin'
+  }
+
+  if (item.sell_volume < 20_000 || item.sell_orders < 50) {
+    return 'low supply'
+  }
+
+  return 'stable'
+}
+
+function getNpcQualityClass(item: NpcArbitrageItem) {
+  const label = getNpcQualityLabel(item)
+
+  if (label === 'stable') {
+    return 'quality-badge stable'
+  }
+
+  if (label === 'wide margin') {
+    return 'quality-badge warning'
+  }
+
+  return 'quality-badge'
 }
 
 function getMinecraftIconName(itemId: string) {
@@ -204,12 +243,30 @@ function DetailMetric({ label, value, hint, positive = false }: DetailMetricProp
   )
 }
 
+function clampNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) {
+    return min
+  }
+
+  return Math.min(Math.max(value, min), max)
+}
+
+const defaultNpcFilters: NpcFilters = {
+  minSellVolume: 10_000,
+  minSellOrders: 25,
+  maxProfitMargin: 25,
+  historySnapshots: 5,
+  minProfitableSnapshots: 2,
+}
+
 function App() {
   const [summary, setSummary] = useState<MarketSummary | null>(null)
   const [items, setItems] = useState<BazaarItem[]>([])
   const [npcArbitrageItems, setNpcArbitrageItems] = useState<NpcArbitrageItem[]>([])
+  const [npcFilters, setNpcFilters] = useState<NpcFilters>(defaultNpcFilters)
   const [query, setQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [isArbitrageLoading, setIsArbitrageLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -218,25 +275,20 @@ function App() {
         setIsLoading(true)
         setError(null)
 
-        const [summaryResponse, itemsResponse, arbitrageResponse] = await Promise.all([
+        const [summaryResponse, itemsResponse] = await Promise.all([
           fetch(`${API_BASE_URL}/api/bazaar/summary`),
           fetch(`${API_BASE_URL}/api/bazaar/latest?limit=40`),
-          fetch(`${API_BASE_URL}/api/arbitrage/npc?limit=8`),
         ])
 
-        if (!summaryResponse.ok || !itemsResponse.ok || !arbitrageResponse.ok) {
+        if (!summaryResponse.ok || !itemsResponse.ok) {
           throw new Error('Backend API request failed.')
         }
 
         const summaryData = (await summaryResponse.json()) as MarketSummary
         const itemsData = (await itemsResponse.json()) as { items: BazaarItem[] }
-        const arbitrageData = (await arbitrageResponse.json()) as {
-          items: NpcArbitrageItem[]
-        }
 
         setSummary(summaryData)
         setItems(itemsData.items)
-        setNpcArbitrageItems(arbitrageData.items)
       } catch {
         setError('start the backend api to load live bazaar data')
       } finally {
@@ -246,6 +298,73 @@ function App() {
 
     loadDashboardData()
   }, [])
+
+  useEffect(() => {
+    const request = new AbortController()
+
+    async function loadNpcArbitrage() {
+      try {
+        setIsArbitrageLoading(true)
+        setError(null)
+
+        const params = new URLSearchParams({
+          limit: '8',
+          min_sell_volume: String(npcFilters.minSellVolume),
+          min_sell_orders: String(npcFilters.minSellOrders),
+          max_profit_margin: String(npcFilters.maxProfitMargin / 100),
+          history_snapshots: String(npcFilters.historySnapshots),
+          min_profitable_snapshots: String(npcFilters.minProfitableSnapshots),
+        })
+        const response = await fetch(`${API_BASE_URL}/api/arbitrage/npc?${params}`, {
+          signal: request.signal,
+        })
+
+        if (!response.ok) {
+          throw new Error('Backend API request failed.')
+        }
+
+        const data = (await response.json()) as { items: NpcArbitrageItem[] }
+        setNpcArbitrageItems(data.items)
+      } catch (loadError) {
+        if (loadError instanceof DOMException && loadError.name === 'AbortError') {
+          return
+        }
+
+        setNpcArbitrageItems([])
+        setError('start the backend api to load live bazaar data')
+      } finally {
+        if (!request.signal.aborted) {
+          setIsArbitrageLoading(false)
+        }
+      }
+    }
+
+    loadNpcArbitrage()
+
+    return () => request.abort()
+  }, [npcFilters])
+
+  function updateNpcFilter(filter: NpcFilterKey, value: number) {
+    setNpcFilters((current) => {
+      const limits: Record<NpcFilterKey, [number, number]> = {
+        minSellVolume: [0, 10_000_000],
+        minSellOrders: [0, 10_000],
+        maxProfitMargin: [1, 1000],
+        historySnapshots: [1, 100],
+        minProfitableSnapshots: [1, current.historySnapshots],
+      }
+      const [min, max] = limits[filter]
+      const nextValue = clampNumber(value, min, max)
+
+      return {
+        ...current,
+        [filter]: nextValue,
+        ...(filter === 'historySnapshots' && current.minProfitableSnapshots > nextValue
+          ? { minProfitableSnapshots: nextValue }
+          : {}),
+      }
+    })
+  }
 
   const rankedItems = useMemo(
     () => [...items].sort((a, b) => scoreItem(b) - scoreItem(a)),
@@ -506,10 +625,78 @@ function App() {
             <article className="panel">
               <div className="panel-heading">
                 <h2>npc arbitrage</h2>
-                <span>liquidity filtered</span>
+                <span>{isArbitrageLoading ? 'updating' : 'liquidity filtered'}</span>
               </div>
 
-              {npcArbitrageItems.length > 0 ? (
+              <div className="filter-grid" aria-label="npc arbitrage filters">
+                <label>
+                  <span>min volume</span>
+                  <input
+                    min="0"
+                    step="1000"
+                    type="number"
+                    value={npcFilters.minSellVolume}
+                    onChange={(event) =>
+                      updateNpcFilter('minSellVolume', Number(event.target.value))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>min orders</span>
+                  <input
+                    min="0"
+                    step="5"
+                    type="number"
+                    value={npcFilters.minSellOrders}
+                    onChange={(event) =>
+                      updateNpcFilter('minSellOrders', Number(event.target.value))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>max margin</span>
+                  <input
+                    min="1"
+                    max="1000"
+                    step="1"
+                    type="number"
+                    value={npcFilters.maxProfitMargin}
+                    onChange={(event) =>
+                      updateNpcFilter('maxProfitMargin', Number(event.target.value))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>history</span>
+                  <input
+                    min="1"
+                    max="100"
+                    step="1"
+                    type="number"
+                    value={npcFilters.historySnapshots}
+                    onChange={(event) =>
+                      updateNpcFilter('historySnapshots', Number(event.target.value))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>profitable</span>
+                  <input
+                    min="1"
+                    max={npcFilters.historySnapshots}
+                    step="1"
+                    type="number"
+                    value={npcFilters.minProfitableSnapshots}
+                    onChange={(event) =>
+                      updateNpcFilter('minProfitableSnapshots', Number(event.target.value))
+                    }
+                  />
+                </label>
+              </div>
+
+              {isArbitrageLoading ? (
+                <p className="empty-state">loading npc arbitrage...</p>
+              ) : npcArbitrageItems.length > 0 ? (
                 <div className="arbitrage-table">
                   <div className="arbitrage-row table-head">
                     <span>#</span>
@@ -524,7 +711,12 @@ function App() {
                       <span>{index + 1}</span>
                       <span className="arbitrage-item-cell">
                         <b>{item.item_name}</b>
-                        <small>{item.item_id}</small>
+                        <small>
+                          {item.item_id}
+                          <span className={getNpcQualityClass(item)}>
+                            {getNpcQualityLabel(item)}
+                          </span>
+                        </small>
                       </span>
                       <span>{formatCompact(item.bazaar_buy_price)}</span>
                       <span>{formatCompact(item.npc_sell_price)}</span>
