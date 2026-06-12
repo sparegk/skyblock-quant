@@ -125,9 +125,33 @@ The collector will:
 
 The generated database and raw snapshots are ignored by Git because they are local data files.
 
+To keep collecting data every few minutes, run:
+
+```bash
+py backend/app/collectors/scheduler.py --interval-minutes 5
+```
+
+Stop the scheduler with `Ctrl+C`.
+
+To test the scheduler once without leaving it running, use:
+
+```bash
+py backend/app/collectors/scheduler.py --interval-minutes 5 --max-runs 1
+```
+
+The Vite frontend has also been started.
+
+Run it with:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
 ## Project Status
 
-This project now has a working first Bazaar data collector. The next step is to build a simple way to inspect the saved data and start detecting basic NPC arbitrage opportunities.
+This project now has a working Bazaar data collector, a simple scheduler for recurring snapshots, and a starter Vite dashboard. The next step is to connect the frontend to a backend API so the dashboard can display real snapshot data.
 
 ## Disclaimer
 
