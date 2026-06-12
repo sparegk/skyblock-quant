@@ -37,6 +37,22 @@ type BazaarItem = {
   collected_at: string
 }
 
+type NpcArbitrageItem = {
+  item_id: string
+  item_name: string
+  category: string | null
+  tier: string | null
+  bazaar_buy_price: number
+  bazaar_sell_price: number
+  npc_sell_price: number
+  profit_per_item: number
+  buy_volume: number
+  sell_volume: number
+  buy_orders: number
+  sell_orders: number
+  collected_at: string
+}
+
 type DetailMetricProps = {
   label: string
   value: ReactNode
@@ -183,6 +199,7 @@ function DetailMetric({ label, value, hint, positive = false }: DetailMetricProp
 function App() {
   const [summary, setSummary] = useState<MarketSummary | null>(null)
   const [items, setItems] = useState<BazaarItem[]>([])
+  const [npcArbitrageItems, setNpcArbitrageItems] = useState<NpcArbitrageItem[]>([])
   const [query, setQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -193,20 +210,25 @@ function App() {
         setIsLoading(true)
         setError(null)
 
-        const [summaryResponse, itemsResponse] = await Promise.all([
+        const [summaryResponse, itemsResponse, arbitrageResponse] = await Promise.all([
           fetch(`${API_BASE_URL}/api/bazaar/summary`),
           fetch(`${API_BASE_URL}/api/bazaar/latest?limit=40`),
+          fetch(`${API_BASE_URL}/api/arbitrage/npc?limit=8`),
         ])
 
-        if (!summaryResponse.ok || !itemsResponse.ok) {
+        if (!summaryResponse.ok || !itemsResponse.ok || !arbitrageResponse.ok) {
           throw new Error('Backend API request failed.')
         }
 
         const summaryData = (await summaryResponse.json()) as MarketSummary
         const itemsData = (await itemsResponse.json()) as { items: BazaarItem[] }
+        const arbitrageData = (await arbitrageResponse.json()) as {
+          items: NpcArbitrageItem[]
+        }
 
         setSummary(summaryData)
         setItems(itemsData.items)
+        setNpcArbitrageItems(arbitrageData.items)
       } catch {
         setError('start the backend api to load live bazaar data')
       } finally {
@@ -238,6 +260,9 @@ function App() {
 
   const marketScore = featuredItem ? Math.min(scoreItem(featuredItem), 99) : 0
   const totalOpportunities = rankedItems.filter((item) => spreadPercent(item) > 1).length
+  const bestNpcProfit = npcArbitrageItems[0]?.profit_per_item ?? 0
+  const topRankings = rankedItems.slice(0, 3)
+  const alertItems = rankedItems.slice(0, 3)
   const averageSpread =
     rankedItems.length > 0
       ? rankedItems.reduce((sum, item) => sum + Math.max(spreadPercent(item), 0), 0) /
@@ -328,7 +353,7 @@ function App() {
             </div>
             <div>
               <span>market outlook</span>
-              <strong>{marketScore >= 55 ? 'bullish' : 'watching'}</strong>
+              <strong>{marketScore >= 55 ? 'active' : 'stable'}</strong>
               <p>
                 score <b>{marketScore}</b> / 100
               </p>
@@ -340,8 +365,12 @@ function App() {
             </div>
             <div>
               <span>arbitrage candidates</span>
-              <strong>{totalOpportunities}</strong>
-              <p>{summary ? `${formatNumber(summary.tracked_products)} tracked` : 'loading'}</p>
+              <strong>{npcArbitrageItems.length || totalOpportunities}</strong>
+              <p>
+                {bestNpcProfit > 0
+                  ? `${formatCompact(bestNpcProfit)} best npc profit`
+                  : 'waiting for metadata'}
+              </p>
             </div>
           </article>
           <article className="metric-card">
@@ -465,6 +494,43 @@ function App() {
                 ))}
               </div>
             </article>
+
+            <article className="panel">
+              <div className="panel-heading">
+                <h2>npc arbitrage</h2>
+                <span>bazaar to npc</span>
+              </div>
+
+              {npcArbitrageItems.length > 0 ? (
+                <div className="arbitrage-table">
+                  <div className="arbitrage-row table-head">
+                    <span>#</span>
+                    <span>item</span>
+                    <span>bazaar buy</span>
+                    <span>npc sell</span>
+                    <span>profit</span>
+                    <span>volume</span>
+                  </div>
+                  {npcArbitrageItems.slice(0, 5).map((item, index) => (
+                    <div className="arbitrage-row" key={item.item_id}>
+                      <span>{index + 1}</span>
+                      <span className="arbitrage-item-cell">
+                        <b>{item.item_name}</b>
+                        <small>{item.item_id}</small>
+                      </span>
+                      <span>{formatCompact(item.bazaar_buy_price)}</span>
+                      <span>{formatCompact(item.npc_sell_price)}</span>
+                      <span className="positive">{formatCompact(item.profit_per_item)}</span>
+                      <span>{formatCompact(item.buy_volume + item.sell_volume)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty-state">
+                  run the item metadata collector to calculate npc arbitrage.
+                </p>
+              )}
+            </article>
           </div>
 
           <aside className="right-column">
@@ -483,12 +549,21 @@ function App() {
             <article className="panel compact-panel">
               <div className="panel-heading">
                 <h2>rankings preview</h2>
+                <span>top scored</span>
               </div>
-              {rankedItems.slice(0, 3).map((item, index) => (
-                <div className="ranking-row" key={item.item_id}>
-                  <span>{index + 1}</span>
-                  <b>{formatItemName(item.item_id)}</b>
-                  <small>score {scoreItem(item)}</small>
+              {topRankings.map((item, index) => (
+                <div className="ranking-card" key={item.item_id}>
+                  <span className="rank-number">{index + 1}</span>
+                  <div>
+                    <b>{formatItemName(item.item_id)}</b>
+                    <small>
+                      {formatCompact(item.buy_volume + item.sell_volume)} volume ·{' '}
+                      {spreadPercent(item).toFixed(2)}% spread
+                    </small>
+                  </div>
+                  <span className="table-score">
+                    <span>{scoreItem(item)}</span>
+                  </span>
                 </div>
               ))}
             </article>
@@ -498,9 +573,27 @@ function App() {
                 <h2>recent research</h2>
                 <span>view all -&gt;</span>
               </div>
-              <p>bazaar liquidity review</p>
-              <p>spread behavior snapshot</p>
-              <p>first arbitrage scanner plan</p>
+              <div className="insight-row">
+                <FileText size={16} />
+                <div>
+                  <b>npc arbitrage baseline</b>
+                  <small>metadata joined with latest bazaar snapshot</small>
+                </div>
+              </div>
+              <div className="insight-row">
+                <FileText size={16} />
+                <div>
+                  <b>liquidity review</b>
+                  <small>volume filters are next for cleaner rankings</small>
+                </div>
+              </div>
+              <div className="insight-row">
+                <FileText size={16} />
+                <div>
+                  <b>spread behavior snapshot</b>
+                  <small>wide spreads need manipulation checks</small>
+                </div>
+              </div>
             </article>
 
             <article className="panel compact-panel">
@@ -508,9 +601,18 @@ function App() {
                 <h2>active alerts</h2>
                 <span>view all -&gt;</span>
               </div>
-              <p>wide spreads need liquidity filtering</p>
-              <p>low volume items should be down-ranked</p>
-              <p>npc price data is the next required input</p>
+              {alertItems.map((item) => (
+                <div className="alert-row" key={item.item_id}>
+                  <span className="alert-dot" />
+                  <div>
+                    <b>{formatItemName(item.item_id)}</b>
+                    <small>
+                      {spreadPercent(item).toFixed(2)}% spread ·{' '}
+                      {formatCompact(item.buy_volume + item.sell_volume)} volume
+                    </small>
+                  </div>
+                </div>
+              ))}
             </article>
           </aside>
         </section>

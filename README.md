@@ -139,6 +139,12 @@ To test the scheduler once without leaving it running, use:
 py backend/app/collectors/scheduler.py --interval-minutes 5 --max-runs 1
 ```
 
+Collect item metadata and NPC sell prices with:
+
+```bash
+py backend/app/collectors/item_metadata_collector.py
+```
+
 Start the backend API with:
 
 ```bash
@@ -154,6 +160,7 @@ Current API endpoints:
 - `GET /api/bazaar/latest`
 - `GET /api/bazaar/items?search=tarantula`
 - `GET /api/bazaar/top-spreads`
+- `GET /api/arbitrage/npc`
 
 The Vite frontend has also been started.
 
@@ -167,7 +174,7 @@ npm run dev
 
 ## Project Status
 
-This project now has a working Bazaar data collector, a simple scheduler for recurring snapshots, a FastAPI backend, and a Vite dashboard that can read snapshot data from the API. The next step is to add a proper NPC arbitrage endpoint and table.
+This project now has a working Bazaar data collector, item metadata collector, simple scheduler, FastAPI backend, and a Vite dashboard that can read snapshot and NPC arbitrage data from the API. The next step is to improve risk filters for the arbitrage table.
 
 ## Disclaimer
 

@@ -145,3 +145,59 @@ def get_top_spreads(limit: int = 25) -> list[dict[str, Any]]:
         ).fetchall()
 
     return [dict(row) for row in rows]
+
+
+def get_npc_arbitrage(limit: int = 25) -> list[dict[str, Any]]:
+    """Return Bazaar items that can be sold to NPCs for estimated profit."""
+    if not database_exists():
+        return []
+
+    with get_connection() as connection:
+        table_exists = connection.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+            AND name = 'items'
+            """
+        ).fetchone()
+
+        if table_exists is None:
+            return []
+
+        rows = connection.execute(
+            """
+            SELECT
+                snapshots.item_id,
+                items.item_name,
+                items.category,
+                items.tier,
+                snapshots.buy_price AS bazaar_buy_price,
+                snapshots.sell_price AS bazaar_sell_price,
+                items.npc_sell_price,
+                items.npc_sell_price - snapshots.buy_price AS profit_per_item,
+                snapshots.buy_volume,
+                snapshots.sell_volume,
+                snapshots.buy_orders,
+                snapshots.sell_orders,
+                snapshots.collected_at
+            FROM bazaar_snapshots AS snapshots
+            INNER JOIN items
+                ON items.item_id = snapshots.item_id
+            WHERE snapshots.collected_at = (
+                SELECT MAX(collected_at)
+                FROM bazaar_snapshots
+            )
+            AND items.npc_sell_price IS NOT NULL
+            AND items.npc_sell_price > 0
+            AND snapshots.buy_price > 0
+            AND items.npc_sell_price - snapshots.buy_price > 0
+            ORDER BY
+                profit_per_item DESC,
+                snapshots.buy_volume + snapshots.sell_volume DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]

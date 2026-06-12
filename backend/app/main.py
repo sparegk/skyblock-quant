@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import (
     get_latest_snapshot,
     get_market_summary,
+    get_npc_arbitrage,
     get_top_spreads,
     search_items,
 )
@@ -58,3 +59,9 @@ def bazaar_top_spreads(
 ) -> dict[str, object]:
     return {"items": get_top_spreads(limit)}
 
+
+@app.get("/api/arbitrage/npc")
+def npc_arbitrage(
+    limit: int = Query(default=25, ge=1, le=100),
+) -> dict[str, object]:
+    return {"items": get_npc_arbitrage(limit)}
