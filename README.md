@@ -107,9 +107,27 @@ The dashboard should include:
 7. Build rule-based signals
 8. Add machine learning after enough data has been collected
 
+## Current Implementation
+
+The first version of the Bazaar data collector has been added.
+
+Run it with:
+
+```bash
+py backend/app/collectors/bazaar_collector.py
+```
+
+The collector will:
+
+- Fetch live Bazaar data from the Hypixel API
+- Save a raw JSON snapshot in `data/raw`
+- Save cleaned product rows in `data/skyblock_quant.db`
+
+The generated database and raw snapshots are ignored by Git because they are local data files.
+
 ## Project Status
 
-This project is currently in the planning stage. The next step is to build the first version of the data collector and begin storing Bazaar snapshots.
+This project now has a working first Bazaar data collector. The next step is to build a simple way to inspect the saved data and start detecting basic NPC arbitrage opportunities.
 
 ## Disclaimer
 
