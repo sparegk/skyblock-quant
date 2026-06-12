@@ -1,107 +1,521 @@
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  Bell,
+  Boxes,
+  CalendarDays,
+  ChevronDown,
+  FileText,
+  Gauge,
+  Home,
+  LineChart,
+  Search,
+  Settings,
+  SlidersHorizontal,
+  Sparkles,
+  TrendingUp,
+} from 'lucide-react'
 import './App.css'
 
-const marketStats = [
-  { label: 'tracked products', value: '1,933' },
-  { label: 'latest snapshot', value: 'local sqlite' },
-  { label: 'collector mode', value: 'scheduled' },
-  { label: 'next feature', value: 'arbitrage' },
+const API_BASE_URL = 'http://127.0.0.1:8000'
+
+type MarketSummary = {
+  database_ready: boolean
+  latest_snapshot: string | null
+  tracked_products: number
+  total_rows: number
+}
+
+type BazaarItem = {
+  item_id: string
+  buy_price: number
+  sell_price: number
+  buy_volume: number
+  sell_volume: number
+  buy_orders: number
+  sell_orders: number
+  spread: number
+  collected_at: string
+}
+
+type DetailMetricProps = {
+  label: string
+  value: ReactNode
+  hint: string
+  positive?: boolean
+}
+
+const navItems = [
+  { label: 'home', icon: Home, active: true },
+  { label: 'markets', icon: Boxes },
+  { label: 'opportunities', icon: Sparkles },
+  { label: 'forecasts', icon: LineChart },
+  { label: 'rankings', icon: Gauge },
+  { label: 'research', icon: FileText },
+  { label: 'alerts', icon: Bell, badge: '12' },
+  { label: 'settings', icon: Settings },
 ]
 
-const topSignals = [
-  {
-    item: 'Tarantula Web',
-    signal: 'watch',
-    confidence: 'baseline',
-    reason: 'high volume with a visible bid-ask spread',
-  },
-  {
-    item: 'Corrupted Bait',
-    signal: 'review',
-    confidence: 'baseline',
-    reason: 'large spread makes it useful for early risk checks',
-  },
-  {
-    item: 'Sea Lumies',
-    signal: 'watch',
-    confidence: 'baseline',
-    reason: 'active buy and sell volume from the latest snapshot',
-  },
-]
+function formatNumber(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: value >= 100 ? 0 : 2,
+  }).format(value)
+}
 
-const buildSteps = [
-  'connect frontend to a local backend api',
-  'show latest bazaar snapshot rows',
-  'add item search and price history',
-  'build the first npc arbitrage table',
-]
+function formatCompact(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 2,
+    notation: 'compact',
+  }).format(value)
+}
+
+function formatSnapshotTime(value: string | null) {
+  if (!value) {
+    return 'no snapshot'
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function formatItemName(itemId: string) {
+  return itemId
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+function spreadPercent(item: BazaarItem) {
+  if (item.sell_price <= 0) {
+    return 0
+  }
+
+  return (item.spread / item.sell_price) * 100
+}
+
+function scoreItem(item: BazaarItem) {
+  const liquidity = Math.min((item.buy_volume + item.sell_volume) / 1_000_000, 40)
+  const spreadScore = Math.min(Math.max(spreadPercent(item), 0), 35)
+  const orderScore = Math.min((item.buy_orders + item.sell_orders) / 40, 25)
+  return Math.round(liquidity + spreadScore + orderScore)
+}
+
+function getMinecraftIconName(itemId: string) {
+  const customIcons: Record<string, string> = {
+    BROWN_MUSHROOM: 'brown_mushroom',
+    CARROT_ITEM: 'carrot',
+    COAL: 'coal',
+    COBBLESTONE: 'cobblestone',
+    DIAMOND: 'diamond',
+    DIAMOND_BLOCK: 'diamond_block',
+    EMERALD: 'emerald',
+    EMERALD_BLOCK: 'emerald_block',
+    ENDER_PEARL: 'ender_pearl',
+    FEATHER: 'feather',
+    GOLD_INGOT: 'gold_ingot',
+    GOLD_BLOCK: 'gold_block',
+    IRON_INGOT: 'iron_ingot',
+    IRON_BLOCK: 'iron_block',
+    MELON: 'melon_slice',
+    NETHERRACK: 'netherrack',
+    OBSIDIAN: 'obsidian',
+    POTATO_ITEM: 'potato',
+    RABBIT_FOOT: 'rabbit_foot',
+    REDSTONE: 'redstone',
+    REDSTONE_BLOCK: 'redstone_block',
+    SLIME_BALL: 'slime_ball',
+    SNOW_BALL: 'snowball',
+    SUGAR_CANE: 'sugar_cane',
+    TARANTULA_WEB: 'cobweb',
+    WHEAT: 'wheat',
+  }
+
+  if (customIcons[itemId]) {
+    return customIcons[itemId]
+  }
+
+  const normalized = itemId
+    .replace(/^ENCHANTED_/, '')
+    .replace(/_ITEM$/, '')
+    .toLowerCase()
+
+  return normalized
+}
+
+function ItemIcon({ item }: { item: BazaarItem }) {
+  const [failed, setFailed] = useState(false)
+  const iconName = getMinecraftIconName(item.item_id)
+  const initials = formatItemName(item.item_id)
+    .split(' ')
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+
+  return (
+    <span className="item-icon">
+      {!failed ? (
+        <img
+          alt=""
+          src={`https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.4/assets/minecraft/textures/item/${iconName}.png`}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span>{initials}</span>
+      )}
+    </span>
+  )
+}
+
+function DetailMetric({ label, value, hint, positive = false }: DetailMetricProps) {
+  return (
+    <div className="detail-metric">
+      <span>{label}</span>
+      <strong className={positive ? 'metric-value positive' : 'metric-value'}>{value}</strong>
+      <small>{hint}</small>
+    </div>
+  )
+}
 
 function App() {
+  const [summary, setSummary] = useState<MarketSummary | null>(null)
+  const [items, setItems] = useState<BazaarItem[]>([])
+  const [query, setQuery] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function loadDashboardData() {
+      try {
+        setIsLoading(true)
+        setError(null)
+
+        const [summaryResponse, itemsResponse] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/bazaar/summary`),
+          fetch(`${API_BASE_URL}/api/bazaar/latest?limit=40`),
+        ])
+
+        if (!summaryResponse.ok || !itemsResponse.ok) {
+          throw new Error('Backend API request failed.')
+        }
+
+        const summaryData = (await summaryResponse.json()) as MarketSummary
+        const itemsData = (await itemsResponse.json()) as { items: BazaarItem[] }
+
+        setSummary(summaryData)
+        setItems(itemsData.items)
+      } catch {
+        setError('start the backend api to load live bazaar data')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadDashboardData()
+  }, [])
+
+  const rankedItems = useMemo(
+    () => [...items].sort((a, b) => scoreItem(b) - scoreItem(a)),
+    [items],
+  )
+
+  const featuredItem = rankedItems[0]
+
+  const filteredItems = useMemo(() => {
+    const cleanQuery = query.trim().toLowerCase()
+
+    if (!cleanQuery) {
+      return rankedItems.slice(0, 8)
+    }
+
+    return rankedItems
+      .filter((item) => formatItemName(item.item_id).toLowerCase().includes(cleanQuery))
+      .slice(0, 8)
+  }, [query, rankedItems])
+
+  const marketScore = featuredItem ? Math.min(scoreItem(featuredItem), 99) : 0
+  const totalOpportunities = rankedItems.filter((item) => spreadPercent(item) > 1).length
+  const averageSpread =
+    rankedItems.length > 0
+      ? rankedItems.reduce((sum, item) => sum + Math.max(spreadPercent(item), 0), 0) /
+        rankedItems.length
+      : 0
+  const totalVolume = rankedItems.reduce(
+    (sum, item) => sum + item.buy_volume + item.sell_volume,
+    0,
+  )
+
   return (
-    <main className="app-shell">
-      <section className="dashboard-header">
-        <div>
-          <p className="eyebrow">skyblock quant</p>
-          <h1>Market dashboard starter</h1>
-          <p className="intro">
-            A simple frontend for viewing Bazaar snapshots, market signals, and
-            future arbitrage results.
-          </p>
+    <div className="dashboard">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-mark">sq</div>
+          <strong>skyblock quant</strong>
         </div>
-        <div className="status-panel" aria-label="collector status">
-          <span className="status-dot" />
+
+        <nav className="nav-list" aria-label="main navigation">
+          {navItems.map((item) => {
+            const Icon = item.icon
+
+            return (
+              <button className={item.active ? 'nav-item active' : 'nav-item'} key={item.label}>
+                <Icon size={18} />
+                <span>{item.label}</span>
+                {item.badge ? <em>{item.badge}</em> : null}
+              </button>
+            )
+          })}
+        </nav>
+
+        <button className="collapse-button">
+          <ChevronDown size={16} />
+          collapse
+        </button>
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <label className="search-box">
+            <Search size={18} />
+            <input
+              aria-label="search items"
+              placeholder="search items, metrics, or markets..."
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <kbd>ctrl k</kbd>
+          </label>
+
+          <div className="toolbar">
+            <button>
+              <CalendarDays size={17} />
+              {formatSnapshotTime(summary?.latest_snapshot ?? null)}
+              <ChevronDown size={15} />
+            </button>
+            <button>
+              <Boxes size={17} />
+              all bazaar
+              <ChevronDown size={15} />
+            </button>
+            <button>
+              <SlidersHorizontal size={17} />
+              filters
+            </button>
+            <button className="icon-button" aria-label="notifications">
+              <Bell size={18} />
+            </button>
+          </div>
+        </header>
+
+        <section className="title-row">
           <div>
-            <strong>collector ready</strong>
-            <p>SQLite snapshots are being saved locally.</p>
+            <h1>home dashboard</h1>
+            <p>a unified view of the hypixel skyblock economy.</p>
           </div>
-        </div>
-      </section>
+          <span className={error ? 'connection offline' : 'connection'}>
+            {error ? error : 'backend connected'}
+          </span>
+        </section>
 
-      <section className="stats-grid" aria-label="market stats">
-        {marketStats.map((stat) => (
-          <article className="stat-card" key={stat.label}>
-            <span>{stat.label}</span>
-            <strong>{stat.value}</strong>
-          </article>
-        ))}
-      </section>
-
-      <section className="content-grid">
-        <div className="table-section">
-          <div className="section-heading">
-            <p className="eyebrow">sample rows</p>
-            <h2>Early signal preview</h2>
-          </div>
-          <div className="signal-table" role="table" aria-label="signal preview">
-            <div className="table-row table-head" role="row">
-              <span>item</span>
-              <span>signal</span>
-              <span>confidence</span>
-              <span>reason</span>
+        <section className="metric-grid">
+          <article className="metric-card outlook">
+            <div className="metric-icon">
+              <TrendingUp size={32} />
             </div>
-            {topSignals.map((signal) => (
-              <div className="table-row" role="row" key={signal.item}>
-                <span>{signal.item}</span>
-                <span className="signal-pill">{signal.signal}</span>
-                <span>{signal.confidence}</span>
-                <span>{signal.reason}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+            <div>
+              <span>market outlook</span>
+              <strong>{marketScore >= 55 ? 'bullish' : 'watching'}</strong>
+              <p>
+                score <b>{marketScore}</b> / 100
+              </p>
+            </div>
+          </article>
+          <article className="metric-card">
+            <div className="metric-icon blue">
+              <Sparkles size={30} />
+            </div>
+            <div>
+              <span>arbitrage candidates</span>
+              <strong>{totalOpportunities}</strong>
+              <p>{summary ? `${formatNumber(summary.tracked_products)} tracked` : 'loading'}</p>
+            </div>
+          </article>
+          <article className="metric-card">
+            <div className="metric-icon purple">
+              <Gauge size={30} />
+            </div>
+            <div>
+              <span>spread index</span>
+              <strong>{averageSpread.toFixed(2)}%</strong>
+              <p>latest snapshot average</p>
+            </div>
+          </article>
+          <article className="metric-card">
+            <div className="metric-icon orange">
+              <LineChart size={30} />
+            </div>
+            <div>
+              <span>market volume</span>
+              <strong>{formatCompact(totalVolume)}</strong>
+              <p>{summary ? `${formatNumber(summary.total_rows)} saved rows` : 'loading'}</p>
+            </div>
+          </article>
+        </section>
 
-        <aside className="next-panel">
-          <div className="section-heading">
-            <p className="eyebrow">next frontend tasks</p>
-            <h2>Build order</h2>
+        <section className="dashboard-grid">
+          <div className="left-column">
+            <article className="panel featured-panel">
+              <div className="panel-heading">
+                <h2>featured opportunity</h2>
+                {featuredItem ? <span className="buy-pill">strong watch</span> : null}
+              </div>
+
+              {isLoading ? (
+                <p className="empty-state">loading bazaar snapshot...</p>
+              ) : featuredItem ? (
+                <>
+                  <div className="featured-head">
+                    <ItemIcon item={featuredItem} />
+                    <div>
+                      <h3>{formatItemName(featuredItem.item_id)}</h3>
+                      <p>{featuredItem.item_id}</p>
+                    </div>
+                  </div>
+
+                  <div className="detail-grid">
+                    <DetailMetric
+                      label="buy price"
+                      value={formatCompact(featuredItem.buy_price)}
+                      hint="highest instant sell order"
+                    />
+                    <DetailMetric
+                      label="sell price"
+                      value={formatCompact(featuredItem.sell_price)}
+                      hint="lowest instant buy order"
+                    />
+                    <DetailMetric
+                      label="spread"
+                      value={`${spreadPercent(featuredItem).toFixed(2)}%`}
+                      hint={`${formatCompact(featuredItem.spread)} coins gap`}
+                      positive
+                    />
+                    <DetailMetric
+                      label="total volume"
+                      value={formatCompact(featuredItem.buy_volume + featuredItem.sell_volume)}
+                      hint="buy and sell volume"
+                    />
+                    <DetailMetric
+                      label="orders"
+                      value={featuredItem.buy_orders + featuredItem.sell_orders}
+                      hint="active order count"
+                    />
+                    <DetailMetric
+                      label="confidence"
+                      value={<span className="score-badge">{scoreItem(featuredItem)}</span>}
+                      hint="baseline score"
+                    />
+                  </div>
+
+                  <p className="panel-note">
+                    high liquidity and a visible spread make this item useful for the first
+                    opportunity ranking pass.
+                  </p>
+                </>
+              ) : (
+                <p className="empty-state">run the collector to create your first snapshot.</p>
+              )}
+            </article>
+
+            <article className="panel">
+              <div className="panel-heading">
+                <h2>top opportunities</h2>
+                <span>{formatSnapshotTime(summary?.latest_snapshot ?? null)}</span>
+              </div>
+
+              <div className="opportunity-table">
+                <div className="opportunity-row table-head">
+                  <span>#</span>
+                  <span>item</span>
+                  <span>buy price</span>
+                  <span>sell price</span>
+                <span>spread</span>
+                <span>confidence</span>
+              </div>
+                {filteredItems.map((item, index) => (
+                  <div className="opportunity-row" key={item.item_id}>
+                    <span>{index + 1}</span>
+                    <span className="item-cell">
+                      <ItemIcon item={item} />
+                      <span>
+                        <b>{formatItemName(item.item_id)}</b>
+                        <small>{item.item_id}</small>
+                      </span>
+                    </span>
+                    <span>{formatCompact(item.buy_price)}</span>
+                    <span>{formatCompact(item.sell_price)}</span>
+                    <span className="positive">{spreadPercent(item).toFixed(2)}%</span>
+                    <span className="table-score">
+                      <span>{scoreItem(item)}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </article>
           </div>
-          <ol>
-            {buildSteps.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-        </aside>
-      </section>
-    </main>
+
+          <aside className="right-column">
+            <article className="panel forecast-panel">
+              <h2>forecast snapshot</h2>
+              <div className="sparkline" aria-hidden="true">
+                <span />
+              </div>
+              <p>prices with high liquidity and positive spreads are prioritized for review.</p>
+              <div className="confidence-line">
+                <span className="score-badge">{marketScore}</span>
+                <strong>baseline confidence</strong>
+              </div>
+            </article>
+
+            <article className="panel compact-panel">
+              <div className="panel-heading">
+                <h2>rankings preview</h2>
+              </div>
+              {rankedItems.slice(0, 3).map((item, index) => (
+                <div className="ranking-row" key={item.item_id}>
+                  <span>{index + 1}</span>
+                  <b>{formatItemName(item.item_id)}</b>
+                  <small>score {scoreItem(item)}</small>
+                </div>
+              ))}
+            </article>
+
+            <article className="panel compact-panel">
+              <div className="panel-heading">
+                <h2>recent research</h2>
+                <span>view all -&gt;</span>
+              </div>
+              <p>bazaar liquidity review</p>
+              <p>spread behavior snapshot</p>
+              <p>first arbitrage scanner plan</p>
+            </article>
+
+            <article className="panel compact-panel">
+              <div className="panel-heading">
+                <h2>active alerts</h2>
+                <span>view all -&gt;</span>
+              </div>
+              <p>wide spreads need liquidity filtering</p>
+              <p>low volume items should be down-ranked</p>
+              <p>npc price data is the next required input</p>
+            </article>
+          </aside>
+        </section>
+      </main>
+    </div>
   )
 }
 

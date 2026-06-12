@@ -139,6 +139,22 @@ To test the scheduler once without leaving it running, use:
 py backend/app/collectors/scheduler.py --interval-minutes 5 --max-runs 1
 ```
 
+Start the backend API with:
+
+```bash
+cd backend
+py -m pip install -r requirements.txt
+py -m uvicorn app.main:app --reload
+```
+
+Current API endpoints:
+
+- `GET /health`
+- `GET /api/bazaar/summary`
+- `GET /api/bazaar/latest`
+- `GET /api/bazaar/items?search=tarantula`
+- `GET /api/bazaar/top-spreads`
+
 The Vite frontend has also been started.
 
 Run it with:
@@ -151,7 +167,7 @@ npm run dev
 
 ## Project Status
 
-This project now has a working Bazaar data collector, a simple scheduler for recurring snapshots, and a starter Vite dashboard. The next step is to connect the frontend to a backend API so the dashboard can display real snapshot data.
+This project now has a working Bazaar data collector, a simple scheduler for recurring snapshots, a FastAPI backend, and a Vite dashboard that can read snapshot data from the API. The next step is to add a proper NPC arbitrage endpoint and table.
 
 ## Disclaimer
 

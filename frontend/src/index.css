@@ -1,18 +1,20 @@
 :root {
-  --background: #f7f8fb;
-  --surface: #ffffff;
-  --text: #17202a;
-  --muted: #657183;
-  --border: #dfe4ea;
-  --green: #1f9d55;
-  --green-soft: rgba(31, 157, 85, 0.16);
-  --blue: #2166a5;
-  --blue-soft: #e6f0f8;
+  --background: #030b13;
+  --surface: rgba(12, 26, 42, 0.84);
+  --text: #f4f7fb;
+  --muted: #a4adba;
+  --border: rgba(157, 185, 219, 0.14);
+  --green: #62ee59;
+  --red: #ff6b6b;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
+  font-size: 14px;
   color: var(--text);
-  background: var(--background);
+  background:
+    radial-gradient(circle at 86% 0%, rgba(45, 126, 109, 0.14), transparent 28%),
+    radial-gradient(circle at 44% 0%, rgba(55, 108, 174, 0.12), transparent 30%),
+    var(--background);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -36,27 +38,36 @@ select {
   font: inherit;
 }
 
+button,
+input {
+  letter-spacing: 0;
+}
+
 h1,
 h2,
+h3,
 p {
   margin: 0;
 }
 
 h1 {
-  max-width: 760px;
   color: var(--text);
-  font-size: 48px;
-  line-height: 1.05;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.1;
+  text-transform: capitalize;
 }
 
 h2 {
   color: var(--text);
-  font-size: 22px;
+  font-size: 15px;
+  font-weight: 500;
   line-height: 1.2;
+  text-transform: capitalize;
 }
 
 @media (max-width: 560px) {
   h1 {
-    font-size: 34px;
+    font-size: 24px;
   }
 }
