@@ -5,9 +5,9 @@
 The best version of this project should be a **web dashboard**.
 
 The dashboard is where the serious analytics, modeling, charts, and backtesting live.  
-The Discord bot is where the project becomes useful in real time by sending alerts and letting users quickly query signals.
+The dashboard is also where users can view real-time alerts and quickly inspect signals.
 
-The project should not be only a Discord bot and should not be only a simple Bazaar tracker. The strongest version is a full market intelligence platform.
+The project should not be only a simple Bazaar tracker. The strongest version is a full market intelligence platform.
 
 ---
 
@@ -261,8 +261,6 @@ Supabase, Neon, Railway Postgres, or managed PostgreSQL
 Redis:
 Upstash or platform Redis
 
-Discord Bot:
-Same backend service or a separate worker service
 ```
 
 Architecture:
@@ -275,7 +273,6 @@ Render / Railway / Fly.io
   ├── FastAPI backend
   ├── scheduled data collector
   ├── model/signal worker
-  └── Discord bot
 
 Managed PostgreSQL
   └── stores item prices, snapshots, signals, and backtests
@@ -470,7 +467,7 @@ A bot that tells me what to buy.
 Describe it as:
 
 ```text
-An event-driven market intelligence platform for a virtual economy that detects arbitrage opportunities, predicts item price movement, backtests signals, and delivers explainable alerts through a dashboard and Discord bot.
+An event-driven market intelligence platform for a virtual economy that detects arbitrage opportunities, predicts item price movement, backtests signals, and delivers explainable alerts through a dashboard.
 ```
 
 That sounds better for school, GitHub, and interviews.
