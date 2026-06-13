@@ -54,6 +54,11 @@ type NpcArbitrageItem = {
   profitable_snapshots: number
   average_profit_per_item: number
   profit_consistency: number
+  max_recent_price_jump: number
+  spread_percent: number
+  risk_score: number
+  risk_label: string
+  risk_reasons: string[]
   buy_volume: number
   sell_volume: number
   buy_orders: number
@@ -86,6 +91,14 @@ type NpcArbitrageDetail = {
   observed_snapshots: number
   profitable_snapshots: number
   profit_consistency: number
+  profit_margin: number
+  sell_volume: number
+  sell_orders: number
+  max_recent_price_jump: number
+  spread_percent: number
+  risk_score: number
+  risk_label: string
+  risk_reasons: string[]
 }
 
 type InvestmentMomentumItem = {
@@ -239,19 +252,7 @@ function scoreItem(item: BazaarItem) {
 }
 
 function getNpcQualityLabel(item: NpcArbitrageItem) {
-  if (item.profit_consistency < 0.75) {
-    return 'not steady'
-  }
-
-  if (item.profit_margin >= 0.2) {
-    return 'wide margin'
-  }
-
-  if (item.sell_volume < 20_000 || item.sell_orders < 50) {
-    return 'low supply'
-  }
-
-  return 'stable'
+  return item.risk_label
 }
 
 function getNpcQualityClass(item: NpcArbitrageItem) {
@@ -261,7 +262,11 @@ function getNpcQualityClass(item: NpcArbitrageItem) {
     return 'quality-badge stable'
   }
 
-  if (label === 'wide margin') {
+  if (label === 'possible manipulation' || label === 'volatile') {
+    return 'quality-badge risk'
+  }
+
+  if (label === 'thin liquidity') {
     return 'quality-badge warning'
   }
 
@@ -917,6 +922,7 @@ function App() {
                     <span>bazaar buy</span>
                     <span>npc sell</span>
                     <span>profit per item</span>
+                    <span>risk</span>
                   </div>
                   {npcArbitrageItems.slice(0, 5).map((item, index) => (
                     <button
@@ -942,6 +948,7 @@ function App() {
                       <span>{formatCompact(item.bazaar_buy_price)}</span>
                       <span>{formatCompact(item.npc_sell_price)}</span>
                       <span className="positive">{formatCompact(item.profit_per_item)}</span>
+                      <span className={getNpcQualityClass(item)}>{item.risk_label}</span>
                     </button>
                   ))}
                 </div>
@@ -959,7 +966,7 @@ function App() {
                       <span>{selectedNpcItem.item_id}</span>
                     </div>
                     <span className={getNpcQualityClass(selectedNpcItem)}>
-                      {getNpcQualityLabel(selectedNpcItem)}
+                      {selectedNpcItem.risk_label}
                     </span>
                   </div>
 
@@ -985,6 +992,24 @@ function App() {
                           value={formatCompact(selectedNpcDetail.latest.profit_per_item)}
                           hint="coins per item"
                           positive={selectedNpcDetail.latest.profit_per_item > 0}
+                        />
+                        <DetailMetric
+                          label="risk score"
+                          value={`${Math.round(selectedNpcDetail.risk_score * 100)} / 100`}
+                          hint={selectedNpcDetail.risk_label}
+                          positive={selectedNpcDetail.risk_score < 0.3}
+                        />
+                        <DetailMetric
+                          label="price jump"
+                          value={formatPercent(selectedNpcDetail.max_recent_price_jump)}
+                          hint="largest recent move"
+                          positive={selectedNpcDetail.max_recent_price_jump < 0.25}
+                        />
+                        <DetailMetric
+                          label="spread"
+                          value={formatPercent(selectedNpcDetail.spread_percent)}
+                          hint={selectedNpcDetail.risk_reasons[0] ?? 'risk check'}
+                          positive={selectedNpcDetail.spread_percent < 0.2}
                         />
                       </div>
 

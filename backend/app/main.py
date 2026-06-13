@@ -158,8 +158,14 @@ def latest_signals(
 @app.post("/api/backtests/evaluate")
 def evaluate_backtests(
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    horizon: Annotated[str, Query(max_length=20)] = "next_snapshot",
 ) -> dict[str, object]:
-    return {"evaluated": evaluate_signal_backtests(limit=limit)}
+    try:
+        evaluated = evaluate_signal_backtests(limit=limit, horizon=horizon)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    return {"evaluated": evaluated, "horizon": horizon}
 
 
 @app.get("/api/backtests/summary")

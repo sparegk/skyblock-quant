@@ -131,12 +131,26 @@ To keep collecting data every few minutes, run:
 py backend/app/collectors/scheduler.py --interval-minutes 5
 ```
 
+Each scheduler cycle now:
+
+- collects one Bazaar snapshot
+- refreshes rule-based signals
+- evaluates eligible backtest horizons
+
 Stop the scheduler with `Ctrl+C`.
 
 To test the scheduler once without leaving it running, use:
 
 ```bash
 py backend/app/collectors/scheduler.py --interval-minutes 5 --max-runs 1
+```
+
+Useful scheduler options:
+
+```bash
+py backend/app/collectors/scheduler.py --interval-minutes 5 --refresh-metadata-first
+py backend/app/collectors/scheduler.py --interval-minutes 5 --backtest-horizons next_snapshot,1h,6h,24h
+py backend/app/collectors/scheduler.py --interval-minutes 5 --skip-analysis
 ```
 
 Collect item metadata and NPC sell prices with:

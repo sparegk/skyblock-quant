@@ -80,10 +80,20 @@ class ApiRouteTests(unittest.TestCase):
 
     def test_evaluate_backtests_passes_limit(self) -> None:
         with patch("app.main.evaluate_signal_backtests", return_value=3) as evaluate:
-            response = main.evaluate_backtests(limit=12)
+            response = main.evaluate_backtests(limit=12, horizon="1h")
 
-        self.assertEqual({"evaluated": 3}, response)
-        evaluate.assert_called_once_with(limit=12)
+        self.assertEqual({"evaluated": 3, "horizon": "1h"}, response)
+        evaluate.assert_called_once_with(limit=12, horizon="1h")
+
+    def test_evaluate_backtests_raises_400_for_bad_horizon(self) -> None:
+        with patch(
+            "app.main.evaluate_signal_backtests",
+            side_effect=ValueError("Unsupported backtest horizon"),
+        ):
+            with self.assertRaises(HTTPException) as error:
+                main.evaluate_backtests(limit=12, horizon="3h")
+
+        self.assertEqual(400, error.exception.status_code)
 
     def test_backtest_summary_returns_metrics(self) -> None:
         expected_summary = {"total_results": 4, "win_rate": 0.75}

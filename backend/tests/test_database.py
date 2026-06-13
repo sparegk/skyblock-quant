@@ -49,6 +49,11 @@ class NpcArbitrageTests(unittest.TestCase):
             high_estimated["estimated_profit"],
             high_estimated["history_adjusted_profit"],
         )
+        self.assertEqual("stable", high_estimated["risk_label"])
+        self.assertLess(high_estimated["risk_score"], 0.3)
+        self.assertIn("risk_reasons", high_estimated)
+        self.assertIn("max_recent_price_jump", high_estimated)
+        self.assertIn("spread_percent", high_estimated)
 
     def test_allows_custom_filter_thresholds(self) -> None:
         rows = database.get_npc_arbitrage(
@@ -63,6 +68,15 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertIn("LOW_VOLUME", item_ids)
         self.assertIn("LOW_ORDERS", item_ids)
         self.assertIn("HIGH_MARGIN_OUTLIER", item_ids)
+
+        low_volume = self._find_item(rows, "LOW_VOLUME")
+        low_orders = self._find_item(rows, "LOW_ORDERS")
+        high_margin = self._find_item(rows, "HIGH_MARGIN_OUTLIER")
+
+        self.assertEqual("thin liquidity", low_volume["risk_label"])
+        self.assertEqual("thin liquidity", low_orders["risk_label"])
+        self.assertEqual("possible manipulation", high_margin["risk_label"])
+        self.assertGreater(high_margin["risk_score"], low_volume["risk_score"])
 
     def test_returns_empty_without_items_table(self) -> None:
         database.DATABASE_PATH = Path(self.temp_dir.name) / "missing_items.db"
@@ -98,6 +112,8 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertEqual(2, len(item["history"]))
         self.assertEqual("2026-06-12T14:00:00Z", item["latest"]["collected_at"])
         self.assertEqual(90.0, item["latest"]["bazaar_buy_price"])
+        self.assertEqual("stable", item["risk_label"])
+        self.assertIn("risk_reasons", item)
 
     def test_returns_none_for_missing_npc_arbitrage_detail(self) -> None:
         self.assertIsNone(database.get_npc_arbitrage_detail("missing"))
@@ -232,6 +248,46 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertEqual(106.0, row[3])
         self.assertGreater(row[4], 0)
         self.assertEqual(1, row[5])
+
+    def test_evaluates_signal_against_hour_horizon(self) -> None:
+        self._insert_evaluated_signal("STEADY_RISE", "2026-06-12T13:00:00Z")
+
+        evaluated = database.evaluate_signal_backtests(horizon="1h")
+
+        self.assertEqual(1, evaluated)
+        with closing(sqlite3.connect(database.DATABASE_PATH)) as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    horizon,
+                    entry_time,
+                    exit_time,
+                    entry_price,
+                    exit_price,
+                    notes
+                FROM backtest_results
+                """
+            ).fetchone()
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual("1h", row[0])
+        self.assertEqual("2026-06-12T13:00:00Z", row[1])
+        self.assertEqual("2026-06-12T14:00:00Z", row[2])
+        self.assertEqual(102.0, row[3])
+        self.assertEqual(110.0, row[4])
+        self.assertEqual("first snapshot within 1h horizon tolerance", row[5])
+
+    def test_skips_hour_horizon_without_near_snapshot(self) -> None:
+        self._insert_evaluated_signal("STEADY_RISE", "2026-06-12T13:30:00Z")
+
+        evaluated = database.evaluate_signal_backtests(horizon="1h")
+
+        self.assertEqual(0, evaluated)
+
+    def test_rejects_unsupported_backtest_horizon(self) -> None:
+        with self.assertRaises(ValueError):
+            database.evaluate_signal_backtests(horizon="3h")
 
     def test_skips_backtest_without_future_snapshot(self) -> None:
         with closing(sqlite3.connect(database.DATABASE_PATH)) as connection:

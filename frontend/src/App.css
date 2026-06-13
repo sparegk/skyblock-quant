@@ -440,7 +440,7 @@
 }
 
 .arbitrage-row {
-  grid-template-columns: 32px minmax(240px, 1fr) repeat(3, minmax(92px, 0.5fr));
+  grid-template-columns: 32px minmax(220px, 1fr) repeat(3, minmax(88px, 0.5fr)) minmax(108px, 0.55fr);
 }
 
 button.arbitrage-row {
@@ -536,6 +536,12 @@ button.arbitrage-row:hover,
   border-color: rgba(255, 208, 90, 0.4);
   background: rgba(255, 208, 90, 0.1);
   color: #ffd05a;
+}
+
+.quality-badge.risk {
+  border-color: rgba(255, 99, 99, 0.38);
+  background: rgba(255, 99, 99, 0.1);
+  color: var(--red);
 }
 
 .npc-detail-panel {

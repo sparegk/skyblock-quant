@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import closing
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
 from typing import Any
@@ -18,6 +18,11 @@ MAX_NPC_ARBITRAGE_MARGIN = 0.25
 NPC_ARBITRAGE_VOLUME_CAP = 10_000
 NPC_ARBITRAGE_HISTORY_SNAPSHOTS = 5
 MIN_NPC_ARBITRAGE_PROFITABLE_SNAPSHOTS = 2
+NPC_ARBITRAGE_STABLE_SELL_VOLUME = 20_000
+NPC_ARBITRAGE_STABLE_SELL_ORDERS = 50
+NPC_ARBITRAGE_HIGH_MARGIN = 0.20
+NPC_ARBITRAGE_HIGH_PRICE_JUMP = 0.25
+NPC_ARBITRAGE_WIDE_SPREAD = 0.20
 MOMENTUM_HISTORY_SNAPSHOTS = 5
 MIN_MOMENTUM_OBSERVED_SNAPSHOTS = 3
 MIN_MOMENTUM_VOLUME = 10_000
@@ -26,10 +31,50 @@ MIN_MOMENTUM_GAIN = 0.03
 MAX_MOMENTUM_SINGLE_JUMP = 0.35
 MIN_MOMENTUM_RISING_STEPS = 2
 STALE_SNAPSHOT_MINUTES = 20
+BACKTEST_HORIZONS = {
+    "next_snapshot": None,
+    "1h": timedelta(hours=1),
+    "6h": timedelta(hours=6),
+    "24h": timedelta(hours=24),
+    "7d": timedelta(days=7),
+}
 
 
 def utc_now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_snapshot_time(value: str) -> datetime:
+    normalized = value.replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+
+    return parsed.astimezone(UTC)
+
+
+def format_snapshot_time(value: datetime) -> str:
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def get_backtest_target_time(source_snapshot: str, horizon: str) -> str | None:
+    if horizon not in BACKTEST_HORIZONS:
+        allowed = ", ".join(BACKTEST_HORIZONS)
+        raise ValueError(f"Unsupported backtest horizon: {horizon}. Use one of: {allowed}.")
+
+    offset = BACKTEST_HORIZONS[horizon]
+    if offset is None:
+        return None
+
+    return format_snapshot_time(parse_snapshot_time(source_snapshot) + offset)
+
+
+def get_backtest_horizon_tolerance(horizon: str) -> timedelta | None:
+    offset = BACKTEST_HORIZONS[horizon]
+    if offset is None:
+        return None
+
+    return max(timedelta(minutes=15), offset / 4)
 
 
 def get_connection() -> sqlite3.Connection:
@@ -248,6 +293,63 @@ def get_top_spreads(limit: int = 25) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def add_npc_arbitrage_risk_fields(row: dict[str, Any]) -> dict[str, Any]:
+    """Add risk score, label, and reasons to an NPC arbitrage row."""
+    risk_reasons = []
+    risk_score = 0.1
+
+    if row.get("profit_consistency", 0) < 0.75:
+        risk_score += 0.25
+        risk_reasons.append("profit only appears in some recent snapshots")
+
+    if row.get("profit_margin", 0) >= NPC_ARBITRAGE_HIGH_MARGIN:
+        risk_score += 0.2
+        risk_reasons.append("profit margin is unusually wide")
+
+    if row.get("sell_volume", 0) < NPC_ARBITRAGE_STABLE_SELL_VOLUME:
+        risk_score += 0.2
+        risk_reasons.append("sell volume is thin")
+
+    if row.get("sell_orders", 0) < NPC_ARBITRAGE_STABLE_SELL_ORDERS:
+        risk_score += 0.15
+        risk_reasons.append("sell order count is thin")
+
+    if row.get("max_recent_price_jump", 0) >= NPC_ARBITRAGE_HIGH_PRICE_JUMP:
+        risk_score += 0.25
+        risk_reasons.append("recent price movement is volatile")
+
+    if row.get("spread_percent", 0) >= NPC_ARBITRAGE_WIDE_SPREAD:
+        risk_score += 0.1
+        risk_reasons.append("bazaar spread is wide")
+
+    risk_score = min(1.0, risk_score)
+
+    if row.get("max_recent_price_jump", 0) >= NPC_ARBITRAGE_HIGH_PRICE_JUMP:
+        risk_label = "volatile"
+    elif (
+        row.get("profit_margin", 0) >= NPC_ARBITRAGE_HIGH_MARGIN
+        or row.get("spread_percent", 0) >= NPC_ARBITRAGE_WIDE_SPREAD
+    ):
+        risk_label = "possible manipulation"
+    elif (
+        row.get("sell_volume", 0) < NPC_ARBITRAGE_STABLE_SELL_VOLUME
+        or row.get("sell_orders", 0) < NPC_ARBITRAGE_STABLE_SELL_ORDERS
+    ):
+        risk_label = "thin liquidity"
+    else:
+        risk_label = "stable"
+
+    if not risk_reasons:
+        risk_reasons.append("liquidity and recent history look stable")
+
+    return {
+        **row,
+        "risk_score": round(risk_score, 4),
+        "risk_label": risk_label,
+        "risk_reasons": risk_reasons,
+    }
+
+
 def get_npc_arbitrage(
     limit: int = 25,
     min_sell_volume: int = MIN_NPC_ARBITRAGE_SELL_VOLUME,
@@ -280,6 +382,17 @@ def get_npc_arbitrage(
                 FROM bazaar_snapshots
                 ORDER BY collected_at DESC
                 LIMIT ?
+            ),
+            priced_history AS (
+                SELECT
+                    snapshots.*,
+                    LAG(snapshots.sell_price) OVER (
+                        PARTITION BY snapshots.item_id
+                        ORDER BY snapshots.collected_at ASC
+                    ) AS previous_sell_price
+                FROM bazaar_snapshots AS snapshots
+                INNER JOIN recent_snapshots
+                    ON recent_snapshots.collected_at = snapshots.collected_at
             ),
             history AS (
                 SELECT
@@ -314,12 +427,18 @@ def get_npc_arbitrage(
                             THEN items.npc_sell_price - snapshots.sell_price
                             ELSE NULL
                         END
-                    ) AS average_profit_per_item
-                FROM bazaar_snapshots AS snapshots
+                    ) AS average_profit_per_item,
+                    MAX(
+                        CASE
+                            WHEN snapshots.previous_sell_price > 0
+                            THEN ABS(snapshots.sell_price - snapshots.previous_sell_price)
+                                / snapshots.previous_sell_price
+                            ELSE 0
+                        END
+                    ) AS max_recent_price_jump
+                FROM priced_history AS snapshots
                 INNER JOIN items
                     ON items.item_id = snapshots.item_id
-                INNER JOIN recent_snapshots
-                    ON recent_snapshots.collected_at = snapshots.collected_at
                 GROUP BY snapshots.item_id
             ),
             candidates AS (
@@ -341,7 +460,8 @@ def get_npc_arbitrage(
                     snapshots.collected_at,
                     history.observed_snapshots,
                     history.profitable_snapshots,
-                    history.average_profit_per_item
+                    history.average_profit_per_item,
+                    history.max_recent_price_jump
                 FROM bazaar_snapshots AS snapshots
                 INNER JOIN items
                     ON items.item_id = snapshots.item_id
@@ -392,7 +512,13 @@ def get_npc_arbitrage(
                     observed_snapshots,
                     profitable_snapshots,
                     average_profit_per_item,
+                    max_recent_price_jump,
                     profitable_snapshots * 1.0 / observed_snapshots AS profit_consistency,
+                    CASE
+                        WHEN bazaar_buy_price > 0
+                        THEN ABS(bazaar_sell_price - bazaar_buy_price) / bazaar_buy_price
+                        ELSE 0
+                    END AS spread_percent,
                     collected_at
                 FROM candidates
                 WHERE profit_margin <= ?
@@ -423,7 +549,7 @@ def get_npc_arbitrage(
             ),
         ).fetchall()
 
-    return [dict(row) for row in rows]
+    return [add_npc_arbitrage_risk_fields(dict(row)) for row in rows]
 
 
 def get_npc_arbitrage_detail(
@@ -508,15 +634,34 @@ def get_npc_arbitrage_detail(
 
     latest = history[0]
     profitable_snapshots = sum(row["is_profitable"] for row in history)
+    chronological_history = list(reversed(history))
+    price_jumps = []
+    for previous, current in zip(chronological_history, chronological_history[1:]):
+        previous_price = previous["bazaar_buy_price"]
+        current_price = current["bazaar_buy_price"]
+        if previous_price > 0:
+            price_jumps.append(abs(current_price - previous_price) / previous_price)
 
-    return {
+    detail = {
         **dict(item),
         "latest": latest,
         "history": history,
         "observed_snapshots": len(history),
         "profitable_snapshots": profitable_snapshots,
         "profit_consistency": profitable_snapshots / len(history),
+        "profit_margin": latest["profit_margin"] or 0,
+        "sell_volume": latest["sell_volume"],
+        "sell_orders": latest["sell_orders"],
+        "max_recent_price_jump": max(price_jumps, default=0),
+        "spread_percent": (
+            abs(latest["bazaar_sell_price"] - latest["bazaar_buy_price"])
+            / latest["bazaar_buy_price"]
+            if latest["bazaar_buy_price"] > 0
+            else 0
+        ),
     }
+
+    return add_npc_arbitrage_risk_fields(detail)
 
 
 def get_investment_momentum(
@@ -776,12 +921,6 @@ def generate_rule_based_signals() -> list[dict[str, Any]]:
 
     for item in get_npc_arbitrage(limit=5):
         confidence = min(0.98, 0.55 + item["profit_consistency"] * 0.3 + item["profit_margin"])
-        risk_score = min(
-            1.0,
-            0.2
-            + max(0, 0.2 - item["profit_margin"])
-            + (0.15 if item["sell_volume"] < 20_000 else 0),
-        )
         signals.append(
             {
                 "created_at": created_at,
@@ -796,7 +935,7 @@ def generate_rule_based_signals() -> list[dict[str, Any]]:
                 ),
                 "confidence": round(confidence, 4),
                 "expected_return": item["profit_margin"],
-                "risk_score": round(risk_score, 4),
+                "risk_score": item["risk_score"],
                 "severity": "positive",
                 "explanation": {
                     "profit_per_item": item["profit_per_item"],
@@ -805,6 +944,8 @@ def generate_rule_based_signals() -> list[dict[str, Any]]:
                     "sell_orders": item["sell_orders"],
                     "profitable_snapshots": item["profitable_snapshots"],
                     "observed_snapshots": item["observed_snapshots"],
+                    "risk_label": item["risk_label"],
+                    "risk_reasons": item["risk_reasons"],
                 },
             }
         )
@@ -911,7 +1052,11 @@ def evaluate_signal_backtests(
     success_threshold: float = 0.0,
     limit: int = 100,
 ) -> int:
-    """Evaluate logged signals against the next available Bazaar snapshot."""
+    """Evaluate logged signals against a future Bazaar snapshot."""
+    if horizon not in BACKTEST_HORIZONS:
+        allowed = ", ".join(BACKTEST_HORIZONS)
+        raise ValueError(f"Unsupported backtest horizon: {horizon}. Use one of: {allowed}.")
+
     if not database_exists():
         return 0
 
@@ -943,6 +1088,7 @@ def evaluate_signal_backtests(
 
         results = []
         for signal in signals:
+            target_time = get_backtest_target_time(signal["source_snapshot"], horizon)
             entry = connection.execute(
                 """
                 SELECT
@@ -956,21 +1102,46 @@ def evaluate_signal_backtests(
                 """,
                 (signal["item_id"], signal["source_snapshot"]),
             ).fetchone()
-            exit_row = connection.execute(
-                """
-                SELECT
-                    collected_at,
-                    (buy_price + sell_price) / 2.0 AS price
-                FROM bazaar_snapshots
-                WHERE item_id = ?
-                AND collected_at > ?
-                AND buy_price > 0
-                AND sell_price > 0
-                ORDER BY collected_at ASC
-                LIMIT 1
-                """,
-                (signal["item_id"], signal["source_snapshot"]),
-            ).fetchone()
+            if target_time is None:
+                exit_row = connection.execute(
+                    """
+                    SELECT
+                        collected_at,
+                        (buy_price + sell_price) / 2.0 AS price
+                    FROM bazaar_snapshots
+                    WHERE item_id = ?
+                    AND collected_at > ?
+                    AND buy_price > 0
+                    AND sell_price > 0
+                    ORDER BY collected_at ASC
+                    LIMIT 1
+                    """,
+                    (signal["item_id"], signal["source_snapshot"]),
+                ).fetchone()
+                notes = "next available snapshot"
+            else:
+                exit_row = connection.execute(
+                    """
+                    SELECT
+                        collected_at,
+                        (buy_price + sell_price) / 2.0 AS price
+                    FROM bazaar_snapshots
+                    WHERE item_id = ?
+                    AND collected_at >= ?
+                    AND buy_price > 0
+                    AND sell_price > 0
+                    ORDER BY collected_at ASC
+                    LIMIT 1
+                    """,
+                    (signal["item_id"], target_time),
+                ).fetchone()
+                if exit_row is not None:
+                    tolerance = get_backtest_horizon_tolerance(horizon)
+                    target = parse_snapshot_time(target_time)
+                    exit_time = parse_snapshot_time(exit_row["collected_at"])
+                    if tolerance is not None and exit_time > target + tolerance:
+                        exit_row = None
+                notes = f"first snapshot within {horizon} horizon tolerance"
 
             if entry is None or exit_row is None or entry["price"] <= 0:
                 continue
@@ -1016,7 +1187,7 @@ def evaluate_signal_backtests(
                     max_gain,
                     1 if return_percent >= success_threshold else 0,
                     evaluated_at,
-                    "next available snapshot",
+                    notes,
                 )
             )
 
