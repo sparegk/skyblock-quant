@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import './App.css'
 
-const API_BASE_URL = 'http://127.0.0.1:8000'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
 type MarketSummary = {
   database_ready: boolean
@@ -263,6 +263,14 @@ function scoreItem(item: BazaarItem) {
   return Math.round(liquidity + spreadScore + orderScore)
 }
 
+function scoreInvestmentItem(item: InvestmentMomentumItem) {
+  const gainScore = Math.min(item.gain_percent * 170, 48)
+  const steadyScore = Math.min(item.rising_steps * 13, 26)
+  const volumeScore = Math.min(item.average_volume / 1_000_000, 18)
+  const jumpPenalty = item.max_single_jump >= 0.25 ? 12 : 0
+  return Math.max(1, Math.round(gainScore + steadyScore + volumeScore - jumpPenalty))
+}
+
 function getNpcQualityLabel(item: NpcArbitrageItem) {
   return item.risk_label
 }
@@ -394,7 +402,7 @@ function getMinecraftIconName(itemId: string) {
   return normalized
 }
 
-function ItemIcon({ item }: { item: BazaarItem }) {
+function ItemIcon({ item }: { item: { item_id: string } }) {
   const [failed, setFailed] = useState(false)
   const iconName = getMinecraftIconName(item.item_id)
   const initials = formatItemName(item.item_id)
@@ -540,7 +548,7 @@ function App() {
           await Promise.all([
           fetch(`${API_BASE_URL}/api/bazaar/summary`),
           fetch(`${API_BASE_URL}/api/bazaar/latest?limit=40`),
-          fetch(`${API_BASE_URL}/api/investments/momentum?limit=5`),
+          fetch(`${API_BASE_URL}/api/investments/momentum?limit=10`),
           fetch(`${API_BASE_URL}/api/signals/latest?limit=8`),
           fetch(`${API_BASE_URL}/api/backtests/summary`),
           fetch(`${API_BASE_URL}/api/backtests/results?limit=5`),
@@ -596,7 +604,7 @@ function App() {
         setIsArbitrageLoading(true)
         setError(null)
 
-        const params = new URLSearchParams({ limit: '8' })
+        const params = new URLSearchParams({ limit: '10' })
         const response = await fetch(`${API_BASE_URL}/api/arbitrage/npc?${params}`, {
           signal: request.signal,
         })
@@ -681,33 +689,28 @@ function App() {
     [items],
   )
 
-  const featuredItem = rankedItems[0]
+  const featuredInvestment = investmentItems[0]
 
-  const filteredItems = useMemo(() => {
+  const filteredInvestments = useMemo(() => {
     const cleanQuery = query.trim().toLowerCase()
 
     if (!cleanQuery) {
-      return rankedItems.slice(0, 8)
+      return investmentItems.slice(0, 10)
     }
 
-    return rankedItems
-      .filter((item) => formatItemName(item.item_id).toLowerCase().includes(cleanQuery))
-      .slice(0, 8)
-  }, [query, rankedItems])
+    return investmentItems
+      .filter((item) => item.item_name.toLowerCase().includes(cleanQuery))
+      .slice(0, 10)
+  }, [query, investmentItems])
 
-  const marketScore = featuredItem ? Math.min(scoreItem(featuredItem), 99) : 0
-  const totalOpportunities = rankedItems.filter((item) => spreadPercent(item) > 1).length
+  const marketScore = featuredInvestment ? Math.min(scoreInvestmentItem(featuredInvestment), 99) : 0
   const bestNpcProfit = npcArbitrageItems[0]?.profit_per_item ?? 0
   const selectedNpcItem =
     npcArbitrageItems.find((item) => item.item_id === selectedNpcItemId) ?? null
   const snapshotAgeMinutes = getSnapshotAgeMinutes(summary?.latest_snapshot ?? null)
   const isSnapshotStale = snapshotAgeMinutes !== null && snapshotAgeMinutes > 20
   const topRankings = rankedItems.slice(0, 3)
-  const averageSpread =
-    rankedItems.length > 0
-      ? rankedItems.reduce((sum, item) => sum + Math.max(spreadPercent(item), 0), 0) /
-        rankedItems.length
-      : 0
+  const bestInvestmentGain = featuredInvestment?.gain_percent ?? 0
   const forecastChartValues =
     investmentItems.length > 0
       ? investmentItems.map((item) => item.momentum_score)
@@ -811,8 +814,8 @@ function App() {
               <Sparkles size={30} />
             </div>
             <div>
-              <span>bazaar flips</span>
-              <strong>{npcArbitrageItems.length || totalOpportunities}</strong>
+              <span>npc flips</span>
+              <strong>{npcArbitrageItems.length}</strong>
               <p>
                 {bestNpcProfit > 0
                   ? `${formatCompact(bestNpcProfit)} best npc profit`
@@ -825,9 +828,13 @@ function App() {
               <Gauge size={30} />
             </div>
             <div>
-              <span>spread index</span>
-              <strong>{averageSpread.toFixed(2)}%</strong>
-              <p>latest snapshot average</p>
+              <span>rising items</span>
+              <strong>{investmentItems.length}</strong>
+              <p>
+                {bestInvestmentGain > 0
+                  ? `${formatPercent(bestInvestmentGain)} strongest move`
+                  : 'collecting price history'}
+              </p>
             </div>
           </article>
           <article className="metric-card">
@@ -835,12 +842,12 @@ function App() {
               <LineChart size={30} />
             </div>
             <div>
-              <span>backtest win rate</span>
+              <span>signal hit rate</span>
               <strong>{backtestSummary?.total_results ? `${backtestWinRate}%` : 'n/a'}</strong>
               <p>
                 {backtestSummary?.total_results
-                  ? `${backtestSummary.successful_results} of ${backtestSummary.total_results} signals`
-                  : 'evaluate signals to start'}
+                  ? `${backtestSummary.successful_results} of ${backtestSummary.total_results} tested picks worked`
+                  : 'waiting for tested picks'}
               </p>
             </div>
           </article>
@@ -848,102 +855,90 @@ function App() {
 
         <section className="dashboard-grid">
           <div className="left-column">
-            <article className="panel featured-panel">
+            <article className="panel market-watch-panel">
               <div className="panel-heading">
-                <h2>featured opportunity</h2>
-                {featuredItem ? <span className="buy-pill">strong watch</span> : null}
+                <h2>featured investment watch</h2>
+                <span>{formatSnapshotTime(summary?.latest_snapshot ?? null)}</span>
               </div>
 
               {isLoading ? (
                 <p className="empty-state">loading bazaar snapshot...</p>
-              ) : featuredItem ? (
+              ) : featuredInvestment ? (
                 <>
-                  <div className="featured-head">
-                    <ItemIcon item={featuredItem} />
-                    <div>
-                      <h3>{formatItemName(featuredItem.item_id)}</h3>
-                      <p>{featuredItem.item_id}</p>
+                  <div className="featured-strip">
+                    <div className="featured-head compact-featured-head">
+                      <ItemIcon item={featuredInvestment} />
+                      <div>
+                        <h3>{featuredInvestment.item_name}</h3>
+                        <p>{featuredInvestment.item_id}</p>
+                      </div>
+                    </div>
+
+                    <div className="featured-stat-row">
+                      <DetailMetric
+                        label="price"
+                        value={formatCompact(featuredInvestment.midpoint_price)}
+                        hint="bazaar midpoint"
+                      />
+                      <DetailMetric
+                        label="recent move"
+                        value={formatPercent(featuredInvestment.gain_percent)}
+                        hint={`${featuredInvestment.observed_snapshots} snapshots`}
+                        positive
+                      />
+                      <DetailMetric
+                        label="volume"
+                        value={formatCompact(featuredInvestment.average_volume)}
+                        hint="recent average"
+                      />
+                      <DetailMetric
+                        label="confidence"
+                        value={<span className="score-badge">{scoreInvestmentItem(featuredInvestment)}</span>}
+                        hint="momentum score"
+                        positive
+                      />
                     </div>
                   </div>
 
-                  <div className="detail-grid">
-                    <DetailMetric
-                      label="buy price"
-                      value={formatCompact(featuredItem.buy_price)}
-                      hint="highest instant sell order"
-                    />
-                    <DetailMetric
-                      label="sell price"
-                      value={formatCompact(featuredItem.sell_price)}
-                      hint="lowest instant buy order"
-                    />
-                    <DetailMetric
-                      label="spread"
-                      value={`${spreadPercent(featuredItem).toFixed(2)}%`}
-                      hint={`${formatCompact(featuredItem.spread)} coins gap`}
-                      positive
-                    />
-                    <DetailMetric
-                      label="total volume"
-                      value={formatCompact(featuredItem.buy_volume + featuredItem.sell_volume)}
-                      hint="buy and sell volume"
-                    />
-                    <DetailMetric
-                      label="orders"
-                      value={featuredItem.buy_orders + featuredItem.sell_orders}
-                      hint="active order count"
-                    />
-                    <DetailMetric
-                      label="confidence"
-                      value={<span className="score-badge">{scoreItem(featuredItem)}</span>}
-                      hint="baseline score"
-                    />
+                  <div className="table-section-heading">
+                    <h3>items to watch</h3>
+                    <span>top 10</span>
                   </div>
 
-                  <p className="panel-note">
-                    high liquidity and a visible spread make this item useful for the first
-                    opportunity ranking pass.
-                  </p>
+                  <div className="opportunity-table">
+                    <div className="opportunity-row table-head">
+                      <span>#</span>
+                      <span>item</span>
+                      <span>price</span>
+                      <span>recent move</span>
+                      <span>volume</span>
+                      <span>confidence</span>
+                    </div>
+                    {filteredInvestments.length > 0 ? filteredInvestments.map((item, index) => (
+                      <div className="opportunity-row" key={item.item_id}>
+                        <span>{index + 1}</span>
+                        <span className="item-cell">
+                          <ItemIcon item={item} />
+                          <span>
+                            <b>{item.item_name}</b>
+                            <small>{item.item_id}</small>
+                          </span>
+                        </span>
+                        <span>{formatCompact(item.midpoint_price)}</span>
+                        <span className="positive">{formatPercent(item.gain_percent)}</span>
+                        <span>{formatCompact(item.average_volume)}</span>
+                        <span className="table-score">
+                          <span>{scoreInvestmentItem(item)}</span>
+                        </span>
+                      </div>
+                    )) : (
+                      <p className="empty-state">collect more snapshots to rank investment candidates.</p>
+                    )}
+                  </div>
                 </>
               ) : (
-                <p className="empty-state">run the collector to create your first snapshot.</p>
-              )}
-            </article>
-
-            <article className="panel">
-              <div className="panel-heading">
-                <h2>top opportunities</h2>
-                <span>{formatSnapshotTime(summary?.latest_snapshot ?? null)}</span>
-              </div>
-
-              <div className="opportunity-table">
-                <div className="opportunity-row table-head">
-                  <span>#</span>
-                  <span>item</span>
-                  <span>buy price</span>
-                  <span>sell price</span>
-                <span>spread</span>
-                <span>confidence</span>
-              </div>
-                {filteredItems.map((item, index) => (
-                  <div className="opportunity-row" key={item.item_id}>
-                    <span>{index + 1}</span>
-                    <span className="item-cell">
-                      <ItemIcon item={item} />
-                      <span>
-                        <b>{formatItemName(item.item_id)}</b>
-                        <small>{item.item_id}</small>
-                      </span>
-                    </span>
-                    <span>{formatCompact(item.buy_price)}</span>
-                    <span>{formatCompact(item.sell_price)}</span>
-                    <span className="positive">{spreadPercent(item).toFixed(2)}%</span>
-                    <span className="table-score">
-                      <span>{scoreItem(item)}</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
+                <p className="empty-state">collect more snapshots to find investment candidates.</p>
+                )}
             </article>
 
             <article className="panel">
@@ -964,7 +959,7 @@ function App() {
                     <span>profit per item</span>
                     <span>risk</span>
                   </div>
-                  {npcArbitrageItems.slice(0, 5).map((item, index) => (
+                  {npcArbitrageItems.slice(0, 10).map((item, index) => (
                     <button
                       className={
                         selectedNpcItemId === item.item_id
@@ -1099,7 +1094,7 @@ function App() {
               <p>
                 {isSnapshotStale && snapshotAgeMinutes !== null
                   ? `latest snapshot is ${formatCompact(snapshotAgeMinutes)} minutes old.`
-                  : 'prices with high liquidity and positive spreads are prioritized for review.'}
+                  : 'items with recent price strength and usable volume are prioritized for review.'}
               </p>
               <div className="confidence-line">
                 <span className="score-badge">{marketScore}</span>
@@ -1252,94 +1247,97 @@ function App() {
               )}
             </article>
 
-            <article className="panel compact-panel">
-              <div className="panel-heading">
-                <h2>backtest results</h2>
-                <span>
-                  {backtestSummary?.latest_evaluated_at
-                    ? formatSnapshotTime(backtestSummary.latest_evaluated_at)
-                    : 'not evaluated'}
-                </span>
-              </div>
-
-              {backtestSummary && backtestSummary.total_results > 0 ? (
-                <>
-                  <div className="backtest-summary-grid">
-                    <DetailMetric
-                      label="win rate"
-                      value={`${backtestWinRate}%`}
-                      hint={`${backtestSummary.successful_results} successful`}
-                      positive={backtestSummary.win_rate >= 0.5}
-                    />
-                    <DetailMetric
-                      label="avg return"
-                      value={formatPercent(backtestSummary.average_return)}
-                      hint="evaluated signals"
-                      positive={backtestSummary.average_return >= 0}
-                    />
-                    <DetailMetric
-                      label="median"
-                      value={formatPercent(backtestSummary.median_return)}
-                      hint="middle result"
-                      positive={backtestSummary.median_return >= 0}
-                    />
-                    <DetailMetric
-                      label="drawdown"
-                      value={formatPercent(backtestSummary.average_drawdown)}
-                      hint="average path low"
-                    />
-                  </div>
-
-                  <div className="backtest-result-list">
-                    {backtestResults.map((result) => (
-                      <div className="backtest-result-row" key={result.id}>
-                        <span
-                          className={
-                            result.was_successful ? 'alert-dot positive-dot' : 'alert-dot risk-dot'
-                          }
-                        />
-                        <div>
-                          <b>{result.item_name}</b>
-                          <small>
-                            {result.signal_type} - {result.horizon}
-                          </small>
-                        </div>
-                        <strong className={result.return_percent >= 0 ? 'positive' : ''}>
-                          {formatPercent(result.return_percent)}
-                        </strong>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <p className="empty-state">
-                  run backtest evaluation after signals have a future snapshot.
-                </p>
-              )}
-            </article>
-
-            <article className="panel compact-panel">
-              <div className="panel-heading">
-                <h2>active alerts</h2>
-                <span>view all -&gt;</span>
-              </div>
-              {signals.length > 0 ? (
-                signals.slice(0, 4).map((signal) => (
-                  <div className="alert-row" key={`${signal.signal_type}-${signal.item_id}`}>
-                    <span className={getSignalDotClass(signal)} />
-                    <div>
-                      <b>{signal.title}</b>
-                      <small>
-                        {signal.item_name} · {getSignalShortText(signal)}
-                      </small>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="empty-state">waiting for live signals.</p>
-              )}
-            </article>
           </aside>
+        </section>
+
+        <section className="lower-dashboard-grid">
+          <article className="panel compact-panel">
+            <div className="panel-heading">
+              <h2>backtest results</h2>
+              <span>
+                {backtestSummary?.latest_evaluated_at
+                  ? formatSnapshotTime(backtestSummary.latest_evaluated_at)
+                  : 'not evaluated'}
+              </span>
+            </div>
+
+            {backtestSummary && backtestSummary.total_results > 0 ? (
+              <>
+                <div className="backtest-summary-grid">
+                  <DetailMetric
+                    label="win rate"
+                    value={`${backtestWinRate}%`}
+                    hint={`${backtestSummary.successful_results} successful`}
+                    positive={backtestSummary.win_rate >= 0.5}
+                  />
+                  <DetailMetric
+                    label="avg return"
+                    value={formatPercent(backtestSummary.average_return)}
+                    hint="evaluated signals"
+                    positive={backtestSummary.average_return >= 0}
+                  />
+                  <DetailMetric
+                    label="median"
+                    value={formatPercent(backtestSummary.median_return)}
+                    hint="middle result"
+                    positive={backtestSummary.median_return >= 0}
+                  />
+                  <DetailMetric
+                    label="drawdown"
+                    value={formatPercent(backtestSummary.average_drawdown)}
+                    hint="average path low"
+                  />
+                </div>
+
+                <div className="backtest-result-list">
+                  {backtestResults.map((result) => (
+                    <div className="backtest-result-row" key={result.id}>
+                      <span
+                        className={
+                          result.was_successful ? 'alert-dot positive-dot' : 'alert-dot risk-dot'
+                        }
+                      />
+                      <div>
+                        <b>{result.item_name}</b>
+                        <small>
+                          {result.signal_type} - {result.horizon}
+                        </small>
+                      </div>
+                      <strong className={result.return_percent >= 0 ? 'positive' : ''}>
+                        {formatPercent(result.return_percent)}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="empty-state">
+                run backtest evaluation after signals have a future snapshot.
+              </p>
+            )}
+          </article>
+
+          <article className="panel compact-panel">
+            <div className="panel-heading">
+              <h2>active alerts</h2>
+              <span>view all -&gt;</span>
+            </div>
+            {signals.length > 0 ? (
+              signals.slice(0, 6).map((signal) => (
+                <div className="alert-row" key={`${signal.signal_type}-${signal.item_id}`}>
+                  <span className={getSignalDotClass(signal)} />
+                  <div>
+                    <b>{signal.title}</b>
+                    <small>
+                      {signal.item_name} - {getSignalShortText(signal)}
+                    </small>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="empty-state">waiting for live signals.</p>
+            )}
+          </article>
         </section>
       </main>
     </div>

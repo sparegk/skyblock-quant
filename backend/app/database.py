@@ -6,11 +6,17 @@ import sqlite3
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 
-DATABASE_PATH = Path(__file__).resolve().parents[2] / "data" / "skyblock_quant.db"
+DATABASE_PATH = Path(
+    os.getenv(
+        "SKYBLOCK_QUANT_DB_PATH",
+        str(Path(__file__).resolve().parents[2] / "data" / "skyblock_quant.db"),
+    )
+)
 
 MIN_NPC_ARBITRAGE_SELL_VOLUME = 10_000
 MIN_NPC_ARBITRAGE_SELL_ORDERS = 25

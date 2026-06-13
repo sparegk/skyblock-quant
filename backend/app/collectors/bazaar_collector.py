@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,7 +17,7 @@ from urllib.request import urlopen
 
 
 BAZAAR_URL = "https://api.hypixel.net/v2/skyblock/bazaar"
-DEFAULT_DB_PATH = Path("data/skyblock_quant.db")
+DEFAULT_DB_PATH = Path(os.getenv("SKYBLOCK_QUANT_DB_PATH", "data/skyblock_quant.db"))
 DEFAULT_RAW_DIR = Path("data/raw")
 
 

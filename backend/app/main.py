@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query
@@ -35,11 +36,19 @@ from app.database import (
 )
 
 
+DEFAULT_CORS_ORIGINS = "http://127.0.0.1:5173,http://localhost:5173"
+
+
+def get_cors_origins() -> list[str]:
+    origins = os.getenv("SKYBLOCK_QUANT_CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
+    return [origin.strip() for origin in origins.split(",") if origin.strip()]
+
+
 app = FastAPI(title="SkyBlock Quant API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

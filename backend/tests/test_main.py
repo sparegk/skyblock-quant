@@ -9,6 +9,16 @@ from app import main
 
 
 class ApiRouteTests(unittest.TestCase):
+    def test_get_cors_origins_reads_env_values(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"SKYBLOCK_QUANT_CORS_ORIGINS": "https://app.example.com, http://localhost:5173"},
+        ):
+            self.assertEqual(
+                ["https://app.example.com", "http://localhost:5173"],
+                main.get_cors_origins(),
+            )
+
     def test_npc_arbitrage_passes_filter_query_params(self) -> None:
         with patch("app.main.get_npc_arbitrage", return_value=[]) as get_npc_arbitrage:
             response = main.npc_arbitrage(

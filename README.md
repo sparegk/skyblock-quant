@@ -125,6 +125,18 @@ The collector will:
 
 The generated database and raw snapshots are ignored by Git because they are local data files.
 
+Optional local configuration is documented in `.env.example`.
+
+```bash
+SKYBLOCK_QUANT_DB_PATH=data/skyblock_quant.db
+SKYBLOCK_QUANT_CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+
+The backend and collectors read `SKYBLOCK_QUANT_DB_PATH`. The API reads
+`SKYBLOCK_QUANT_CORS_ORIGINS`. The Vite frontend reads `VITE_API_BASE_URL`
+from `frontend/.env` when present.
+
 To keep collecting data every few minutes, run:
 
 ```bash
@@ -175,6 +187,10 @@ Current API endpoints:
 - `GET /api/bazaar/items?search=tarantula`
 - `GET /api/bazaar/top-spreads`
 - `GET /api/arbitrage/npc`
+- `GET /api/signals/latest`
+- `GET /api/backtests/summary`
+- `GET /api/backtests/results`
+- `GET /api/jobs/latest`
 
 The Vite frontend has also been started.
 
@@ -185,6 +201,8 @@ cd frontend
 npm install
 npm run dev
 ```
+
+For a deployed frontend, set `VITE_API_BASE_URL` to the deployed backend URL.
 
 ## Project Status
 
