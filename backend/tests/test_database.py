@@ -273,6 +273,34 @@ class NpcArbitrageTests(unittest.TestCase):
 
         self.assertEqual(0, database.evaluate_signal_backtests())
 
+    def test_returns_backtest_summary_metrics(self) -> None:
+        self._insert_evaluated_signal("STEADY_RISE", "2026-06-12T13:00:00Z")
+        self._insert_evaluated_signal("ONE_PUMP", "2026-06-12T13:00:00Z")
+
+        evaluated = database.evaluate_signal_backtests()
+        summary = database.get_backtest_summary()
+
+        self.assertEqual(2, evaluated)
+        self.assertEqual(2, summary["total_results"])
+        self.assertEqual(2, summary["successful_results"])
+        self.assertEqual(1.0, summary["win_rate"])
+        self.assertGreater(summary["average_return"], 0)
+        self.assertGreaterEqual(summary["best_return"], summary["worst_return"])
+        self.assertIsNotNone(summary["latest_evaluated_at"])
+
+    def test_returns_recent_backtest_results(self) -> None:
+        self._insert_evaluated_signal("STEADY_RISE", "2026-06-12T13:00:00Z")
+        database.evaluate_signal_backtests()
+
+        results = database.get_backtest_results(limit=5)
+
+        self.assertEqual(1, len(results))
+        self.assertEqual("STEADY_RISE", results[0]["item_id"])
+        self.assertEqual("Steady Rise", results[0]["item_name"])
+        self.assertEqual("PRICE_MOMENTUM", results[0]["signal_type"])
+        self.assertEqual("next_snapshot", results[0]["horizon"])
+        self.assertIn("return_percent", results[0])
+
     def _find_item(
         self, rows: list[dict[str, object]], item_id: str
     ) -> dict[str, object]:
@@ -281,6 +309,45 @@ class NpcArbitrageTests(unittest.TestCase):
                 return row
 
         raise AssertionError(f"Missing item: {item_id}")
+
+    def _insert_evaluated_signal(self, item_id: str, source_snapshot: str) -> None:
+        item_name = item_id.title().replace("_", " ")
+        with closing(sqlite3.connect(database.DATABASE_PATH)) as connection:
+            database.create_signal_tables(connection)
+            connection.execute(
+                """
+                INSERT INTO signals (
+                    created_at,
+                    source_snapshot,
+                    item_id,
+                    item_name,
+                    signal_type,
+                    title,
+                    message,
+                    confidence,
+                    expected_return,
+                    risk_score,
+                    severity,
+                    explanation_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    source_snapshot,
+                    source_snapshot,
+                    item_id,
+                    item_name,
+                    "PRICE_MOMENTUM",
+                    "item heating up",
+                    f"{item_name} is climbing.",
+                    0.8,
+                    0.05,
+                    0.2,
+                    "watch",
+                    "{}",
+                ),
+            )
+            connection.commit()
 
     def _create_test_database(self, db_path: Path) -> None:
         with closing(sqlite3.connect(db_path)) as connection:

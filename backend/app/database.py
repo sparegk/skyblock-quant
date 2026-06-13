@@ -1047,3 +1047,103 @@ def evaluate_signal_backtests(
             connection.commit()
 
     return len(results)
+
+
+def get_backtest_summary() -> dict[str, Any]:
+    """Return aggregate performance metrics for evaluated signals."""
+    empty_summary = {
+        "total_results": 0,
+        "successful_results": 0,
+        "win_rate": 0.0,
+        "average_return": 0.0,
+        "median_return": 0.0,
+        "best_return": 0.0,
+        "worst_return": 0.0,
+        "average_drawdown": 0.0,
+        "latest_evaluated_at": None,
+    }
+
+    if not database_exists():
+        return empty_summary
+
+    with closing(get_connection()) as connection:
+        create_signal_tables(connection)
+        rows = connection.execute(
+            """
+            SELECT
+                return_percent,
+                max_drawdown_percent,
+                was_successful,
+                evaluated_at
+            FROM backtest_results
+            ORDER BY return_percent ASC
+            """
+        ).fetchall()
+
+    if not rows:
+        return empty_summary
+
+    returns = [row["return_percent"] for row in rows]
+    drawdowns = [row["max_drawdown_percent"] for row in rows]
+    total_results = len(rows)
+    successful_results = sum(1 for row in rows if row["was_successful"])
+    midpoint = total_results // 2
+    if total_results % 2:
+        median_return = returns[midpoint]
+    else:
+        median_return = (returns[midpoint - 1] + returns[midpoint]) / 2
+
+    latest_evaluated_at = max(
+        (row["evaluated_at"] for row in rows if row["evaluated_at"]),
+        default=None,
+    )
+
+    return {
+        "total_results": total_results,
+        "successful_results": successful_results,
+        "win_rate": successful_results / total_results,
+        "average_return": sum(returns) / total_results,
+        "median_return": median_return,
+        "best_return": max(returns),
+        "worst_return": min(returns),
+        "average_drawdown": sum(drawdowns) / total_results,
+        "latest_evaluated_at": latest_evaluated_at,
+    }
+
+
+def get_backtest_results(limit: int = 50) -> list[dict[str, Any]]:
+    """Return recent evaluated signal results."""
+    if not database_exists():
+        return []
+
+    with closing(get_connection()) as connection:
+        create_signal_tables(connection)
+        rows = connection.execute(
+            """
+            SELECT
+                backtest_results.id,
+                backtest_results.signal_id,
+                backtest_results.item_id,
+                COALESCE(signals.item_name, backtest_results.item_id) AS item_name,
+                backtest_results.signal_type,
+                COALESCE(signals.title, backtest_results.signal_type) AS title,
+                backtest_results.horizon,
+                backtest_results.entry_time,
+                backtest_results.exit_time,
+                backtest_results.entry_price,
+                backtest_results.exit_price,
+                backtest_results.return_percent,
+                backtest_results.max_drawdown_percent,
+                backtest_results.max_gain_percent,
+                backtest_results.was_successful,
+                backtest_results.evaluated_at,
+                backtest_results.notes
+            FROM backtest_results
+            LEFT JOIN signals ON signals.id = backtest_results.signal_id
+            ORDER BY backtest_results.evaluated_at DESC, backtest_results.id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]

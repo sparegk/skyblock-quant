@@ -85,6 +85,24 @@ class ApiRouteTests(unittest.TestCase):
         self.assertEqual({"evaluated": 3}, response)
         evaluate.assert_called_once_with(limit=12)
 
+    def test_backtest_summary_returns_metrics(self) -> None:
+        expected_summary = {"total_results": 4, "win_rate": 0.75}
+
+        with patch("app.main.get_backtest_summary", return_value=expected_summary) as summary:
+            response = main.backtest_summary()
+
+        self.assertEqual(expected_summary, response)
+        summary.assert_called_once_with()
+
+    def test_backtest_results_passes_limit(self) -> None:
+        expected_results = [{"item_id": "TEST_ITEM"}]
+
+        with patch("app.main.get_backtest_results", return_value=expected_results) as results:
+            response = main.backtest_results(limit=9)
+
+        self.assertEqual({"results": expected_results}, response)
+        results.assert_called_once_with(limit=9)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -21,6 +21,8 @@ from app.database import (
     MOMENTUM_HISTORY_SNAPSHOTS,
     NPC_ARBITRAGE_HISTORY_SNAPSHOTS,
     evaluate_signal_backtests,
+    get_backtest_results,
+    get_backtest_summary,
     get_investment_momentum,
     get_latest_snapshot,
     get_latest_signals,
@@ -158,3 +160,15 @@ def evaluate_backtests(
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> dict[str, object]:
     return {"evaluated": evaluate_signal_backtests(limit=limit)}
+
+
+@app.get("/api/backtests/summary")
+def backtest_summary() -> dict[str, object]:
+    return get_backtest_summary()
+
+
+@app.get("/api/backtests/results")
+def backtest_results(
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> dict[str, object]:
+    return {"results": get_backtest_results(limit=limit)}

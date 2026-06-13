@@ -129,6 +129,38 @@ type MarketSignal = {
   explanation: Record<string, unknown>
 }
 
+type BacktestSummary = {
+  total_results: number
+  successful_results: number
+  win_rate: number
+  average_return: number
+  median_return: number
+  best_return: number
+  worst_return: number
+  average_drawdown: number
+  latest_evaluated_at: string | null
+}
+
+type BacktestResult = {
+  id: number
+  signal_id: number
+  item_id: string
+  item_name: string
+  signal_type: string
+  title: string
+  horizon: string
+  entry_time: string
+  exit_time: string
+  entry_price: number
+  exit_price: number
+  return_percent: number
+  max_drawdown_percent: number
+  max_gain_percent: number
+  was_successful: number
+  evaluated_at: string
+  notes: string | null
+}
+
 type DetailMetricProps = {
   label: string
   value: ReactNode
@@ -441,6 +473,8 @@ function App() {
   const [npcArbitrageItems, setNpcArbitrageItems] = useState<NpcArbitrageItem[]>([])
   const [investmentItems, setInvestmentItems] = useState<InvestmentMomentumItem[]>([])
   const [signals, setSignals] = useState<MarketSignal[]>([])
+  const [backtestSummary, setBacktestSummary] = useState<BacktestSummary | null>(null)
+  const [backtestResults, setBacktestResults] = useState<BacktestResult[]>([])
   const [selectedNpcItemId, setSelectedNpcItemId] = useState<string | null>(null)
   const [selectedNpcDetail, setSelectedNpcDetail] = useState<NpcArbitrageDetail | null>(null)
   const [query, setQuery] = useState('')
@@ -455,19 +489,30 @@ function App() {
         setIsLoading(true)
         setError(null)
 
-        const [summaryResponse, itemsResponse, investmentResponse, signalsResponse] =
+        const [
+          summaryResponse,
+          itemsResponse,
+          investmentResponse,
+          signalsResponse,
+          backtestSummaryResponse,
+          backtestResultsResponse,
+        ] =
           await Promise.all([
           fetch(`${API_BASE_URL}/api/bazaar/summary`),
           fetch(`${API_BASE_URL}/api/bazaar/latest?limit=40`),
           fetch(`${API_BASE_URL}/api/investments/momentum?limit=5`),
           fetch(`${API_BASE_URL}/api/signals/latest?limit=8`),
+          fetch(`${API_BASE_URL}/api/backtests/summary`),
+          fetch(`${API_BASE_URL}/api/backtests/results?limit=5`),
         ])
 
         if (
           !summaryResponse.ok ||
           !itemsResponse.ok ||
           !investmentResponse.ok ||
-          !signalsResponse.ok
+          !signalsResponse.ok ||
+          !backtestSummaryResponse.ok ||
+          !backtestResultsResponse.ok
         ) {
           throw new Error('Backend API request failed.')
         }
@@ -478,11 +523,17 @@ function App() {
           items: InvestmentMomentumItem[]
         }
         const signalsData = (await signalsResponse.json()) as { signals: MarketSignal[] }
+        const backtestSummaryData = (await backtestSummaryResponse.json()) as BacktestSummary
+        const backtestResultsData = (await backtestResultsResponse.json()) as {
+          results: BacktestResult[]
+        }
 
         setSummary(summaryData)
         setItems(itemsData.items)
         setInvestmentItems(investmentData.items)
         setSignals(signalsData.signals)
+        setBacktestSummary(backtestSummaryData)
+        setBacktestResults(backtestResultsData.results)
       } catch {
         setError('start the backend api to load live bazaar data')
       } finally {
@@ -613,9 +664,6 @@ function App() {
       ? rankedItems.reduce((sum, item) => sum + Math.max(spreadPercent(item), 0), 0) /
         rankedItems.length
       : 0
-  const stableNpcFlips = npcArbitrageItems.filter(
-    (item) => item.profit_consistency >= 0.75 && item.sell_volume >= 20_000,
-  ).length
   const forecastChartValues =
     investmentItems.length > 0
       ? investmentItems.map((item) => item.momentum_score)
@@ -625,6 +673,7 @@ function App() {
       .slice()
       .reverse()
       .map((row) => row.profit_per_item) ?? []
+  const backtestWinRate = backtestSummary ? Math.round(backtestSummary.win_rate * 100) : 0
 
   return (
     <div className="dashboard">
@@ -741,12 +790,12 @@ function App() {
               <LineChart size={30} />
             </div>
             <div>
-              <span>stable npc flips</span>
-              <strong>{stableNpcFlips}</strong>
+              <span>backtest win rate</span>
+              <strong>{backtestSummary?.total_results ? `${backtestWinRate}%` : 'n/a'}</strong>
               <p>
-                {npcArbitrageItems.length > 0
-                  ? `${npcArbitrageItems.length} filtered flips`
-                  : 'waiting for arbitrage data'}
+                {backtestSummary?.total_results
+                  ? `${backtestSummary.successful_results} of ${backtestSummary.total_results} signals`
+                  : 'evaluate signals to start'}
               </p>
             </div>
           </article>
@@ -1076,6 +1125,72 @@ function App() {
                   <small>wide spreads need manipulation checks</small>
                 </div>
               </div>
+            </article>
+
+            <article className="panel compact-panel">
+              <div className="panel-heading">
+                <h2>backtest results</h2>
+                <span>
+                  {backtestSummary?.latest_evaluated_at
+                    ? formatSnapshotTime(backtestSummary.latest_evaluated_at)
+                    : 'not evaluated'}
+                </span>
+              </div>
+
+              {backtestSummary && backtestSummary.total_results > 0 ? (
+                <>
+                  <div className="backtest-summary-grid">
+                    <DetailMetric
+                      label="win rate"
+                      value={`${backtestWinRate}%`}
+                      hint={`${backtestSummary.successful_results} successful`}
+                      positive={backtestSummary.win_rate >= 0.5}
+                    />
+                    <DetailMetric
+                      label="avg return"
+                      value={formatPercent(backtestSummary.average_return)}
+                      hint="evaluated signals"
+                      positive={backtestSummary.average_return >= 0}
+                    />
+                    <DetailMetric
+                      label="median"
+                      value={formatPercent(backtestSummary.median_return)}
+                      hint="middle result"
+                      positive={backtestSummary.median_return >= 0}
+                    />
+                    <DetailMetric
+                      label="drawdown"
+                      value={formatPercent(backtestSummary.average_drawdown)}
+                      hint="average path low"
+                    />
+                  </div>
+
+                  <div className="backtest-result-list">
+                    {backtestResults.map((result) => (
+                      <div className="backtest-result-row" key={result.id}>
+                        <span
+                          className={
+                            result.was_successful ? 'alert-dot positive-dot' : 'alert-dot risk-dot'
+                          }
+                        />
+                        <div>
+                          <b>{result.item_name}</b>
+                          <small>
+                            {result.signal_type} - {result.horizon}
+                          </small>
+                        </div>
+                        <strong className={result.return_percent >= 0 ? 'positive' : ''}>
+                          {formatPercent(result.return_percent)}
+                        </strong>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="empty-state">
+                  run backtest evaluation after signals have a future snapshot.
+                </p>
+              )}
             </article>
 
             <article className="panel compact-panel">
