@@ -24,6 +24,7 @@ from app.database import (
     get_backtest_results,
     get_backtest_summary,
     get_investment_momentum,
+    get_latest_job_runs,
     get_latest_snapshot,
     get_latest_signals,
     get_market_summary,
@@ -178,3 +179,10 @@ def backtest_results(
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
 ) -> dict[str, object]:
     return {"results": get_backtest_results(limit=limit)}
+
+
+@app.get("/api/jobs/latest")
+def latest_jobs(
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> dict[str, object]:
+    return {"jobs": get_latest_job_runs(limit=limit)}

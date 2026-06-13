@@ -158,6 +158,32 @@ def create_signal_tables(connection: sqlite3.Connection) -> None:
     connection.commit()
 
 
+def create_job_tables(connection: sqlite3.Connection) -> None:
+    """Create tables used to record scheduled backend work."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS job_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_type TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            status TEXT NOT NULL,
+            message TEXT,
+            products_collected INTEGER,
+            signals_generated INTEGER,
+            backtests_evaluated_json TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_job_runs_started_at
+        ON job_runs (started_at DESC)
+        """
+    )
+    connection.commit()
+
+
 def initialize_analysis_tables() -> None:
     """Ensure signal and backtest tables exist in the configured database."""
     if not database_exists():
@@ -165,6 +191,108 @@ def initialize_analysis_tables() -> None:
 
     with closing(get_connection()) as connection:
         create_signal_tables(connection)
+        create_job_tables(connection)
+
+
+def start_job_run(job_type: str) -> int:
+    """Record the start of a backend job and return its id."""
+    if not database_exists():
+        return 0
+
+    with closing(get_connection()) as connection:
+        create_job_tables(connection)
+        cursor = connection.execute(
+            """
+            INSERT INTO job_runs (
+                job_type,
+                started_at,
+                status,
+                backtests_evaluated_json
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (job_type, utc_now(), "running", "{}"),
+        )
+        connection.commit()
+
+    return int(cursor.lastrowid)
+
+
+def finish_job_run(
+    job_id: int,
+    status: str,
+    message: str,
+    *,
+    products_collected: int | None = None,
+    signals_generated: int | None = None,
+    backtests_evaluated: dict[str, int] | None = None,
+) -> None:
+    """Mark a backend job as finished with metrics."""
+    if not job_id or not database_exists():
+        return
+
+    with closing(get_connection()) as connection:
+        create_job_tables(connection)
+        connection.execute(
+            """
+            UPDATE job_runs
+            SET
+                finished_at = ?,
+                status = ?,
+                message = ?,
+                products_collected = ?,
+                signals_generated = ?,
+                backtests_evaluated_json = ?
+            WHERE id = ?
+            """,
+            (
+                utc_now(),
+                status,
+                message,
+                products_collected,
+                signals_generated,
+                json.dumps(backtests_evaluated or {}, sort_keys=True),
+                job_id,
+            ),
+        )
+        connection.commit()
+
+
+def get_latest_job_runs(limit: int = 20) -> list[dict[str, Any]]:
+    """Return recent backend job runs."""
+    if not database_exists():
+        return []
+
+    with closing(get_connection()) as connection:
+        create_job_tables(connection)
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                job_type,
+                started_at,
+                finished_at,
+                status,
+                message,
+                products_collected,
+                signals_generated,
+                backtests_evaluated_json
+            FROM job_runs
+            ORDER BY started_at DESC, id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    job_runs = []
+    for row in rows:
+        job_run = dict(row)
+        job_run["backtests_evaluated"] = json.loads(
+            job_run.pop("backtests_evaluated_json")
+        )
+        job_runs.append(job_run)
+
+    return job_runs
 
 
 def get_market_summary() -> dict[str, Any]:

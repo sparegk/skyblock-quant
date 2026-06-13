@@ -185,6 +185,30 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertIn("idx_backtest_results_unique_signal", indexes)
         self.assertIn("idx_backtest_results_item", indexes)
 
+    def test_records_and_returns_job_runs(self) -> None:
+        database.initialize_analysis_tables()
+
+        job_id = database.start_job_run("market_cycle")
+        database.finish_job_run(
+            job_id,
+            "success",
+            "completed",
+            products_collected=1933,
+            signals_generated=8,
+            backtests_evaluated={"next_snapshot": 2, "1h": 0},
+        )
+
+        jobs = database.get_latest_job_runs(limit=5)
+
+        self.assertEqual(1, len(jobs))
+        self.assertEqual("market_cycle", jobs[0]["job_type"])
+        self.assertEqual("success", jobs[0]["status"])
+        self.assertEqual("completed", jobs[0]["message"])
+        self.assertEqual(1933, jobs[0]["products_collected"])
+        self.assertEqual(8, jobs[0]["signals_generated"])
+        self.assertEqual({"next_snapshot": 2, "1h": 0}, jobs[0]["backtests_evaluated"])
+        self.assertIsNotNone(jobs[0]["finished_at"])
+
     def test_evaluates_signal_against_next_snapshot(self) -> None:
         with closing(sqlite3.connect(database.DATABASE_PATH)) as connection:
             database.create_signal_tables(connection)

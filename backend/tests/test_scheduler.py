@@ -52,12 +52,14 @@ class SchedulerTests(unittest.TestCase):
             raw_dir = Path(temp_dir) / "raw"
 
             with (
-                patch.object(scheduler, "collect_bazaar_snapshot") as collect,
+                patch.object(scheduler, "collect_bazaar_snapshot", return_value=1933) as collect,
                 patch.object(
                     scheduler,
                     "run_analysis_cycle",
                     return_value={"signals": 1, "evaluated": {"next_snapshot": 0}},
                 ) as analysis,
+                patch.object(scheduler.database, "start_job_run", return_value=42) as start_job,
+                patch.object(scheduler.database, "finish_job_run") as finish_job,
             ):
                 scheduler.run_bazaar_scheduler(
                     db_path,
@@ -69,6 +71,73 @@ class SchedulerTests(unittest.TestCase):
 
         collect.assert_called_once_with(db_path, raw_dir)
         analysis.assert_called_once_with(db_path, ("next_snapshot",))
+        start_job.assert_called_once_with("market_cycle")
+        finish_job.assert_called_once_with(
+            42,
+            "success",
+            "Collector and analysis completed.",
+            products_collected=1933,
+            signals_generated=1,
+            backtests_evaluated={"next_snapshot": 0},
+        )
+
+    def test_scheduler_records_partial_run_when_analysis_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "test.db"
+            raw_dir = Path(temp_dir) / "raw"
+
+            with (
+                patch.object(scheduler, "collect_bazaar_snapshot", return_value=1933),
+                patch.object(
+                    scheduler,
+                    "run_analysis_cycle",
+                    side_effect=RuntimeError("analysis error"),
+                ),
+                patch.object(scheduler.database, "start_job_run", return_value=42),
+                patch.object(scheduler.database, "finish_job_run") as finish_job,
+            ):
+                scheduler.run_bazaar_scheduler(
+                    db_path,
+                    raw_dir,
+                    interval_minutes=5,
+                    max_runs=1,
+                    backtest_horizons=("next_snapshot",),
+                )
+
+        finish_job.assert_called_once_with(
+            42,
+            "partial",
+            "Collector completed, analysis failed: analysis error",
+            products_collected=1933,
+        )
+
+    def test_scheduler_records_failed_run_when_collection_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "test.db"
+            raw_dir = Path(temp_dir) / "raw"
+
+            with (
+                patch.object(
+                    scheduler,
+                    "collect_bazaar_snapshot",
+                    side_effect=RuntimeError("collector error"),
+                ),
+                patch.object(scheduler.database, "start_job_run", return_value=42),
+                patch.object(scheduler.database, "finish_job_run") as finish_job,
+            ):
+                scheduler.run_bazaar_scheduler(
+                    db_path,
+                    raw_dir,
+                    interval_minutes=5,
+                    max_runs=1,
+                )
+
+        finish_job.assert_called_once_with(
+            42,
+            "failed",
+            "Collector failed: collector error",
+            products_collected=None,
+        )
 
 
 if __name__ == "__main__":

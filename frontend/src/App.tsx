@@ -174,6 +174,18 @@ type BacktestResult = {
   notes: string | null
 }
 
+type JobRun = {
+  id: number
+  job_type: string
+  started_at: string
+  finished_at: string | null
+  status: 'running' | 'success' | 'partial' | 'failed' | string
+  message: string | null
+  products_collected: number | null
+  signals_generated: number | null
+  backtests_evaluated: Record<string, number>
+}
+
 type DetailMetricProps = {
   label: string
   value: ReactNode
@@ -317,6 +329,27 @@ function getSignalShortText(signal: MarketSignal) {
   }
 
   return `${Math.round(signal.confidence * 100)}% confidence`
+}
+
+function getJobStatusClass(status: string) {
+  if (status === 'success') {
+    return 'quality-badge stable'
+  }
+
+  if (status === 'failed') {
+    return 'quality-badge risk'
+  }
+
+  return 'quality-badge warning'
+}
+
+function formatBacktestCounts(values: Record<string, number>) {
+  const entries = Object.entries(values)
+  if (!entries.length) {
+    return 'none'
+  }
+
+  return entries.map(([horizon, count]) => `${horizon}: ${count}`).join(' / ')
 }
 
 function getMinecraftIconName(itemId: string) {
@@ -480,6 +513,7 @@ function App() {
   const [signals, setSignals] = useState<MarketSignal[]>([])
   const [backtestSummary, setBacktestSummary] = useState<BacktestSummary | null>(null)
   const [backtestResults, setBacktestResults] = useState<BacktestResult[]>([])
+  const [jobRuns, setJobRuns] = useState<JobRun[]>([])
   const [selectedNpcItemId, setSelectedNpcItemId] = useState<string | null>(null)
   const [selectedNpcDetail, setSelectedNpcDetail] = useState<NpcArbitrageDetail | null>(null)
   const [query, setQuery] = useState('')
@@ -501,6 +535,7 @@ function App() {
           signalsResponse,
           backtestSummaryResponse,
           backtestResultsResponse,
+          jobsResponse,
         ] =
           await Promise.all([
           fetch(`${API_BASE_URL}/api/bazaar/summary`),
@@ -509,6 +544,7 @@ function App() {
           fetch(`${API_BASE_URL}/api/signals/latest?limit=8`),
           fetch(`${API_BASE_URL}/api/backtests/summary`),
           fetch(`${API_BASE_URL}/api/backtests/results?limit=5`),
+          fetch(`${API_BASE_URL}/api/jobs/latest?limit=5`),
         ])
 
         if (
@@ -517,7 +553,8 @@ function App() {
           !investmentResponse.ok ||
           !signalsResponse.ok ||
           !backtestSummaryResponse.ok ||
-          !backtestResultsResponse.ok
+          !backtestResultsResponse.ok ||
+          !jobsResponse.ok
         ) {
           throw new Error('Backend API request failed.')
         }
@@ -532,6 +569,7 @@ function App() {
         const backtestResultsData = (await backtestResultsResponse.json()) as {
           results: BacktestResult[]
         }
+        const jobsData = (await jobsResponse.json()) as { jobs: JobRun[] }
 
         setSummary(summaryData)
         setItems(itemsData.items)
@@ -539,6 +577,7 @@ function App() {
         setSignals(signalsData.signals)
         setBacktestSummary(backtestSummaryData)
         setBacktestResults(backtestResultsData.results)
+        setJobRuns(jobsData.jobs)
       } catch {
         setError('start the backend api to load live bazaar data')
       } finally {
@@ -679,6 +718,7 @@ function App() {
       .reverse()
       .map((row) => row.profit_per_item) ?? []
   const backtestWinRate = backtestSummary ? Math.round(backtestSummary.win_rate * 100) : 0
+  const latestJob = jobRuns[0]
 
   return (
     <div className="dashboard">
@@ -1150,6 +1190,66 @@ function App() {
                   <small>wide spreads need manipulation checks</small>
                 </div>
               </div>
+            </article>
+
+            <article className="panel compact-panel">
+              <div className="panel-heading">
+                <h2>system status</h2>
+                {latestJob ? (
+                  <span className={getJobStatusClass(latestJob.status)}>{latestJob.status}</span>
+                ) : (
+                  <span>no runs</span>
+                )}
+              </div>
+
+              {latestJob ? (
+                <>
+                  <div className="job-run-grid">
+                    <DetailMetric
+                      label="last run"
+                      value={formatSnapshotTime(latestJob.started_at)}
+                      hint={latestJob.job_type}
+                      positive={latestJob.status === 'success'}
+                    />
+                    <DetailMetric
+                      label="products"
+                      value={
+                        latestJob.products_collected !== null
+                          ? formatCompact(latestJob.products_collected)
+                          : 'n/a'
+                      }
+                      hint="collected"
+                    />
+                    <DetailMetric
+                      label="signals"
+                      value={latestJob.signals_generated ?? 'n/a'}
+                      hint="generated"
+                    />
+                    <DetailMetric
+                      label="backtests"
+                      value={Object.values(latestJob.backtests_evaluated).reduce(
+                        (sum, count) => sum + count,
+                        0,
+                      )}
+                      hint={formatBacktestCounts(latestJob.backtests_evaluated)}
+                    />
+                  </div>
+
+                  <div className="job-run-list">
+                    {jobRuns.slice(0, 3).map((job) => (
+                      <div className="job-run-row" key={job.id}>
+                        <span className={getJobStatusClass(job.status)}>{job.status}</span>
+                        <div>
+                          <b>{formatSnapshotTime(job.started_at)}</b>
+                          <small>{job.message ?? job.job_type}</small>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="empty-state">scheduler runs will appear after the next cycle.</p>
+              )}
             </article>
 
             <article className="panel compact-panel">

@@ -113,6 +113,15 @@ class ApiRouteTests(unittest.TestCase):
         self.assertEqual({"results": expected_results}, response)
         results.assert_called_once_with(limit=9)
 
+    def test_latest_jobs_passes_limit(self) -> None:
+        expected_jobs = [{"job_type": "market_cycle"}]
+
+        with patch("app.main.get_latest_job_runs", return_value=expected_jobs) as jobs:
+            response = main.latest_jobs(limit=6)
+
+        self.assertEqual({"jobs": expected_jobs}, response)
+        jobs.assert_called_once_with(limit=6)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -75,11 +75,20 @@ def run_bazaar_scheduler(
     while True:
         started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"\n[{started_at}] Collecting Bazaar snapshot...")
+        database.DATABASE_PATH = db_path
+        job_id = database.start_job_run("market_cycle")
+        products_collected = None
 
         try:
-            collect_bazaar_snapshot(db_path, raw_dir)
+            products_collected = collect_bazaar_snapshot(db_path, raw_dir)
         except Exception as error:
             print(f"Collector failed: {error}")
+            database.finish_job_run(
+                job_id,
+                "failed",
+                f"Collector failed: {error}",
+                products_collected=products_collected,
+            )
         else:
             if run_analysis:
                 try:
@@ -89,8 +98,29 @@ def run_bazaar_scheduler(
                         f"{analysis['signals']} signal(s), "
                         f"backtests {analysis['evaluated']}."
                     )
+                    database.finish_job_run(
+                        job_id,
+                        "success",
+                        "Collector and analysis completed.",
+                        products_collected=products_collected,
+                        signals_generated=int(analysis["signals"]),
+                        backtests_evaluated=analysis["evaluated"],
+                    )
                 except Exception as error:
                     print(f"Analysis failed: {error}")
+                    database.finish_job_run(
+                        job_id,
+                        "partial",
+                        f"Collector completed, analysis failed: {error}",
+                        products_collected=products_collected,
+                    )
+            else:
+                database.finish_job_run(
+                    job_id,
+                    "success",
+                    "Collector completed; analysis skipped.",
+                    products_collected=products_collected,
+                )
 
         completed_runs += 1
         if max_runs is not None and completed_runs >= max_runs:

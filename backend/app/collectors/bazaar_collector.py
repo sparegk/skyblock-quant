@@ -123,7 +123,7 @@ def save_clean_snapshot(
     return len(rows)
 
 
-def collect_bazaar_snapshot(db_path: Path, raw_dir: Path) -> None:
+def collect_bazaar_snapshot(db_path: Path, raw_dir: Path) -> int:
     """Fetch one Bazaar snapshot and save both raw and clean versions."""
     collected_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     data = fetch_bazaar_data()
@@ -138,6 +138,7 @@ def collect_bazaar_snapshot(db_path: Path, raw_dir: Path) -> None:
     print(f"Collected {row_count} Bazaar products.")
     print(f"Raw snapshot: {raw_path}")
     print(f"SQLite database: {db_path}")
+    return row_count
 
 
 def parse_args() -> argparse.Namespace:
