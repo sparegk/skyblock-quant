@@ -169,6 +169,110 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertIn("idx_backtest_results_unique_signal", indexes)
         self.assertIn("idx_backtest_results_item", indexes)
 
+    def test_evaluates_signal_against_next_snapshot(self) -> None:
+        with closing(sqlite3.connect(database.DATABASE_PATH)) as connection:
+            database.create_signal_tables(connection)
+            connection.execute(
+                """
+                INSERT INTO signals (
+                    created_at,
+                    source_snapshot,
+                    item_id,
+                    item_name,
+                    signal_type,
+                    title,
+                    message,
+                    confidence,
+                    expected_return,
+                    risk_score,
+                    severity,
+                    explanation_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "2026-06-12T13:00:00Z",
+                    "2026-06-12T13:00:00Z",
+                    "STEADY_RISE",
+                    "Steady Rise",
+                    "PRICE_MOMENTUM",
+                    "item heating up",
+                    "Steady Rise is climbing.",
+                    0.8,
+                    0.05,
+                    0.2,
+                    "watch",
+                    "{}",
+                ),
+            )
+            connection.commit()
+
+        evaluated = database.evaluate_signal_backtests()
+
+        self.assertEqual(1, evaluated)
+        with closing(sqlite3.connect(database.DATABASE_PATH)) as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    item_id,
+                    horizon,
+                    entry_price,
+                    exit_price,
+                    return_percent,
+                    was_successful
+                FROM backtest_results
+                """
+            ).fetchone()
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual("STEADY_RISE", row[0])
+        self.assertEqual("next_snapshot", row[1])
+        self.assertEqual(102.0, row[2])
+        self.assertEqual(106.0, row[3])
+        self.assertGreater(row[4], 0)
+        self.assertEqual(1, row[5])
+
+    def test_skips_backtest_without_future_snapshot(self) -> None:
+        with closing(sqlite3.connect(database.DATABASE_PATH)) as connection:
+            database.create_signal_tables(connection)
+            connection.execute(
+                """
+                INSERT INTO signals (
+                    created_at,
+                    source_snapshot,
+                    item_id,
+                    item_name,
+                    signal_type,
+                    title,
+                    message,
+                    confidence,
+                    expected_return,
+                    risk_score,
+                    severity,
+                    explanation_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "2026-06-12T14:00:00Z",
+                    "2026-06-12T14:00:00Z",
+                    "STEADY_RISE",
+                    "Steady Rise",
+                    "PRICE_MOMENTUM",
+                    "item heating up",
+                    "Steady Rise is climbing.",
+                    0.8,
+                    0.05,
+                    0.2,
+                    "watch",
+                    "{}",
+                ),
+            )
+            connection.commit()
+
+        self.assertEqual(0, database.evaluate_signal_backtests())
+
     def _find_item(
         self, rows: list[dict[str, object]], item_id: str
     ) -> dict[str, object]:

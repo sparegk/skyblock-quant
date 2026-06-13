@@ -20,6 +20,7 @@ from app.database import (
     MIN_NPC_ARBITRAGE_SELL_VOLUME,
     MOMENTUM_HISTORY_SNAPSHOTS,
     NPC_ARBITRAGE_HISTORY_SNAPSHOTS,
+    evaluate_signal_backtests,
     get_investment_momentum,
     get_latest_snapshot,
     get_latest_signals,
@@ -150,3 +151,10 @@ def latest_signals(
     refresh: bool = True,
 ) -> dict[str, object]:
     return {"signals": get_latest_signals(limit=limit, refresh=refresh)}
+
+
+@app.post("/api/backtests/evaluate")
+def evaluate_backtests(
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+) -> dict[str, object]:
+    return {"evaluated": evaluate_signal_backtests(limit=limit)}

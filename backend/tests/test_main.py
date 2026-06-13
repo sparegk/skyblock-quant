@@ -78,6 +78,13 @@ class ApiRouteTests(unittest.TestCase):
         self.assertEqual({"signals": []}, response)
         latest_signals.assert_called_once_with(limit=8, refresh=False)
 
+    def test_evaluate_backtests_passes_limit(self) -> None:
+        with patch("app.main.evaluate_signal_backtests", return_value=3) as evaluate:
+            response = main.evaluate_backtests(limit=12)
+
+        self.assertEqual({"evaluated": 3}, response)
+        evaluate.assert_called_once_with(limit=12)
+
 
 if __name__ == "__main__":
     unittest.main()

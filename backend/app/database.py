@@ -904,3 +904,146 @@ def get_latest_signals(limit: int = 25, refresh: bool = True) -> list[dict[str, 
         signals.append(signal)
 
     return signals
+
+
+def evaluate_signal_backtests(
+    horizon: str = "next_snapshot",
+    success_threshold: float = 0.0,
+    limit: int = 100,
+) -> int:
+    """Evaluate logged signals against the next available Bazaar snapshot."""
+    if not database_exists():
+        return 0
+
+    evaluated_at = utc_now()
+
+    with closing(get_connection()) as connection:
+        create_signal_tables(connection)
+        signals = connection.execute(
+            """
+            SELECT
+                id,
+                item_id,
+                signal_type,
+                source_snapshot
+            FROM signals
+            WHERE item_id != '__MARKET__'
+            AND source_snapshot IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1
+                FROM backtest_results
+                WHERE backtest_results.signal_id = signals.id
+                AND backtest_results.horizon = ?
+            )
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (horizon, limit),
+        ).fetchall()
+
+        results = []
+        for signal in signals:
+            entry = connection.execute(
+                """
+                SELECT
+                    collected_at,
+                    (buy_price + sell_price) / 2.0 AS price
+                FROM bazaar_snapshots
+                WHERE item_id = ?
+                AND collected_at = ?
+                AND buy_price > 0
+                AND sell_price > 0
+                """,
+                (signal["item_id"], signal["source_snapshot"]),
+            ).fetchone()
+            exit_row = connection.execute(
+                """
+                SELECT
+                    collected_at,
+                    (buy_price + sell_price) / 2.0 AS price
+                FROM bazaar_snapshots
+                WHERE item_id = ?
+                AND collected_at > ?
+                AND buy_price > 0
+                AND sell_price > 0
+                ORDER BY collected_at ASC
+                LIMIT 1
+                """,
+                (signal["item_id"], signal["source_snapshot"]),
+            ).fetchone()
+
+            if entry is None or exit_row is None or entry["price"] <= 0:
+                continue
+
+            path_rows = connection.execute(
+                """
+                SELECT
+                    (buy_price + sell_price) / 2.0 AS price
+                FROM bazaar_snapshots
+                WHERE item_id = ?
+                AND collected_at >= ?
+                AND collected_at <= ?
+                AND buy_price > 0
+                AND sell_price > 0
+                ORDER BY collected_at ASC
+                """,
+                (signal["item_id"], signal["source_snapshot"], exit_row["collected_at"]),
+            ).fetchall()
+            price_path = [row["price"] for row in path_rows]
+            max_drawdown = (
+                (min(price_path) - entry["price"]) / entry["price"]
+                if price_path
+                else 0.0
+            )
+            max_gain = (
+                (max(price_path) - entry["price"]) / entry["price"]
+                if price_path
+                else 0.0
+            )
+            return_percent = (exit_row["price"] - entry["price"]) / entry["price"]
+            results.append(
+                (
+                    signal["id"],
+                    signal["item_id"],
+                    signal["signal_type"],
+                    horizon,
+                    entry["collected_at"],
+                    exit_row["collected_at"],
+                    entry["price"],
+                    exit_row["price"],
+                    return_percent,
+                    max_drawdown,
+                    max_gain,
+                    1 if return_percent >= success_threshold else 0,
+                    evaluated_at,
+                    "next available snapshot",
+                )
+            )
+
+        if results:
+            connection.executemany(
+                """
+                INSERT INTO backtest_results (
+                    signal_id,
+                    item_id,
+                    signal_type,
+                    horizon,
+                    entry_time,
+                    exit_time,
+                    entry_price,
+                    exit_price,
+                    return_percent,
+                    max_drawdown_percent,
+                    max_gain_percent,
+                    was_successful,
+                    evaluated_at,
+                    notes
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(signal_id, horizon) DO NOTHING
+                """,
+                results,
+            )
+            connection.commit()
+
+    return len(results)
