@@ -220,6 +220,13 @@
   min-width: 0;
 }
 
+.filter-presets {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .filter-panel span {
   color: var(--muted);
   font-size: 11px;
@@ -254,6 +261,12 @@
   cursor: pointer;
   padding: 0 14px;
   text-transform: capitalize;
+}
+
+.filter-panel button.active-preset {
+  border-color: rgba(98, 238, 89, 0.36);
+  background: rgba(98, 238, 89, 0.1);
+  color: var(--green);
 }
 
 .metric-grid {

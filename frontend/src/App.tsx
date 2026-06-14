@@ -18,13 +18,53 @@ import './App.css'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
-const DEFAULT_NPC_FILTERS = {
+type NpcFilterSettings = {
+  minSellVolume: number
+  minSellOrders: number
+  maxProfitMargin: number
+  historySnapshots: number
+  minProfitableSnapshots: number
+}
+
+const NPC_FILTER_STORAGE_KEY = 'skyblock-quant:npc-filters'
+
+const DEFAULT_NPC_FILTERS: NpcFilterSettings = {
   minSellVolume: 10000,
   minSellOrders: 25,
   maxProfitMargin: 0.25,
   historySnapshots: 5,
   minProfitableSnapshots: 2,
 }
+
+const NPC_FILTER_PRESETS: Array<{
+  label: string
+  value: NpcFilterSettings
+}> = [
+  {
+    label: 'balanced',
+    value: DEFAULT_NPC_FILTERS,
+  },
+  {
+    label: 'strict',
+    value: {
+      minSellVolume: 25000,
+      minSellOrders: 50,
+      maxProfitMargin: 0.18,
+      historySnapshots: 8,
+      minProfitableSnapshots: 5,
+    },
+  },
+  {
+    label: 'loose',
+    value: {
+      minSellVolume: 2500,
+      minSellOrders: 10,
+      maxProfitMargin: 0.4,
+      historySnapshots: 3,
+      minProfitableSnapshots: 1,
+    },
+  },
+]
 
 type MarketSummary = {
   database_ready: boolean
@@ -233,6 +273,59 @@ function formatCompact(value: number) {
 
 function formatPercent(value: number) {
   return `${(value * 100).toFixed(2)}%`
+}
+
+function sanitizeNpcFilters(filters: Partial<NpcFilterSettings>): NpcFilterSettings {
+  return {
+    minSellVolume: Math.max(0, Number(filters.minSellVolume) || 0),
+    minSellOrders: Math.max(0, Number(filters.minSellOrders) || 0),
+    maxProfitMargin: Math.max(0.01, Number(filters.maxProfitMargin) || 0.01),
+    historySnapshots: Math.max(1, Number(filters.historySnapshots) || 1),
+    minProfitableSnapshots: Math.max(1, Number(filters.minProfitableSnapshots) || 1),
+  }
+}
+
+function npcFiltersMatch(left: NpcFilterSettings, right: NpcFilterSettings) {
+  return (
+    left.minSellVolume === right.minSellVolume &&
+    left.minSellOrders === right.minSellOrders &&
+    left.maxProfitMargin === right.maxProfitMargin &&
+    left.historySnapshots === right.historySnapshots &&
+    left.minProfitableSnapshots === right.minProfitableSnapshots
+  )
+}
+
+function loadNpcFilters() {
+  if (typeof window === 'undefined') {
+    return DEFAULT_NPC_FILTERS
+  }
+
+  try {
+    const savedFilters = window.localStorage.getItem(NPC_FILTER_STORAGE_KEY)
+
+    if (!savedFilters) {
+      return DEFAULT_NPC_FILTERS
+    }
+
+    return sanitizeNpcFilters({
+      ...DEFAULT_NPC_FILTERS,
+      ...(JSON.parse(savedFilters) as Partial<NpcFilterSettings>),
+    })
+  } catch {
+    return DEFAULT_NPC_FILTERS
+  }
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedValue(value), delayMs)
+
+    return () => window.clearTimeout(timeout)
+  }, [delayMs, value])
+
+  return debouncedValue
 }
 
 function formatSnapshotTime(value: string | null) {
@@ -534,11 +627,16 @@ function App() {
   const [selectedNpcDetail, setSelectedNpcDetail] = useState<NpcArbitrageDetail | null>(null)
   const [query, setQuery] = useState('')
   const [showNpcFilters, setShowNpcFilters] = useState(false)
-  const [npcFilters, setNpcFilters] = useState(DEFAULT_NPC_FILTERS)
+  const [npcFilters, setNpcFilters] = useState<NpcFilterSettings>(() => loadNpcFilters())
+  const debouncedNpcFilters = useDebouncedValue(npcFilters, 350)
   const [isLoading, setIsLoading] = useState(true)
   const [isArbitrageLoading, setIsArbitrageLoading] = useState(true)
   const [isNpcDetailLoading, setIsNpcDetailLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    window.localStorage.setItem(NPC_FILTER_STORAGE_KEY, JSON.stringify(npcFilters))
+  }, [npcFilters])
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -616,11 +714,11 @@ function App() {
 
         const params = new URLSearchParams({
           limit: '10',
-          min_sell_volume: String(npcFilters.minSellVolume),
-          min_sell_orders: String(npcFilters.minSellOrders),
-          max_profit_margin: String(npcFilters.maxProfitMargin),
-          history_snapshots: String(npcFilters.historySnapshots),
-          min_profitable_snapshots: String(npcFilters.minProfitableSnapshots),
+          min_sell_volume: String(debouncedNpcFilters.minSellVolume),
+          min_sell_orders: String(debouncedNpcFilters.minSellOrders),
+          max_profit_margin: String(debouncedNpcFilters.maxProfitMargin),
+          history_snapshots: String(debouncedNpcFilters.historySnapshots),
+          min_profitable_snapshots: String(debouncedNpcFilters.minProfitableSnapshots),
         })
         const response = await fetch(`${API_BASE_URL}/api/arbitrage/npc?${params}`, {
           signal: request.signal,
@@ -656,11 +754,10 @@ function App() {
     loadNpcArbitrage()
 
     return () => request.abort()
-  }, [npcFilters])
+  }, [debouncedNpcFilters])
 
   useEffect(() => {
     if (!selectedNpcItemId) {
-      setSelectedNpcDetail(null)
       return
     }
 
@@ -670,7 +767,7 @@ function App() {
       try {
         setIsNpcDetailLoading(true)
         const params = new URLSearchParams({
-          history_snapshots: '5',
+          history_snapshots: String(debouncedNpcFilters.historySnapshots),
         })
         const response = await fetch(
           `${API_BASE_URL}/api/arbitrage/npc/${selectedNpcItemId}?${params}`,
@@ -699,7 +796,7 @@ function App() {
     loadNpcDetail()
 
     return () => request.abort()
-  }, [selectedNpcItemId])
+  }, [debouncedNpcFilters.historySnapshots, selectedNpcItemId])
 
   const rankedItems = useMemo(
     () => [...items].sort((a, b) => scoreItem(b) - scoreItem(a)),
@@ -820,6 +917,18 @@ function App() {
 
         {showNpcFilters ? (
           <section className="filter-panel" aria-label="npc arbitrage risk filters">
+            <div className="filter-presets" aria-label="npc arbitrage filter presets">
+              {NPC_FILTER_PRESETS.map((preset) => (
+                <button
+                  className={npcFiltersMatch(npcFilters, preset.value) ? 'active-preset' : ''}
+                  type="button"
+                  key={preset.label}
+                  onClick={() => setNpcFilters(preset.value)}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
             <label>
               <span>min volume</span>
               <input
@@ -828,10 +937,12 @@ function App() {
                 step="1000"
                 value={npcFilters.minSellVolume}
                 onChange={(event) =>
-                  setNpcFilters((current) => ({
-                    ...current,
-                    minSellVolume: Math.max(0, Number(event.target.value) || 0),
-                  }))
+                  setNpcFilters((current) =>
+                    sanitizeNpcFilters({
+                      ...current,
+                      minSellVolume: Number(event.target.value),
+                    }),
+                  )
                 }
               />
             </label>
@@ -843,10 +954,12 @@ function App() {
                 step="5"
                 value={npcFilters.minSellOrders}
                 onChange={(event) =>
-                  setNpcFilters((current) => ({
-                    ...current,
-                    minSellOrders: Math.max(0, Number(event.target.value) || 0),
-                  }))
+                  setNpcFilters((current) =>
+                    sanitizeNpcFilters({
+                      ...current,
+                      minSellOrders: Number(event.target.value),
+                    }),
+                  )
                 }
               />
             </label>
@@ -859,10 +972,12 @@ function App() {
                 step="0.01"
                 value={npcFilters.maxProfitMargin}
                 onChange={(event) =>
-                  setNpcFilters((current) => ({
-                    ...current,
-                    maxProfitMargin: Math.max(0.01, Number(event.target.value) || 0.01),
-                  }))
+                  setNpcFilters((current) =>
+                    sanitizeNpcFilters({
+                      ...current,
+                      maxProfitMargin: Number(event.target.value),
+                    }),
+                  )
                 }
               />
             </label>
@@ -875,10 +990,12 @@ function App() {
                 step="1"
                 value={npcFilters.historySnapshots}
                 onChange={(event) =>
-                  setNpcFilters((current) => ({
-                    ...current,
-                    historySnapshots: Math.max(1, Number(event.target.value) || 1),
-                  }))
+                  setNpcFilters((current) =>
+                    sanitizeNpcFilters({
+                      ...current,
+                      historySnapshots: Number(event.target.value),
+                    }),
+                  )
                 }
               />
             </label>
@@ -891,10 +1008,12 @@ function App() {
                 step="1"
                 value={npcFilters.minProfitableSnapshots}
                 onChange={(event) =>
-                  setNpcFilters((current) => ({
-                    ...current,
-                    minProfitableSnapshots: Math.max(1, Number(event.target.value) || 1),
-                  }))
+                  setNpcFilters((current) =>
+                    sanitizeNpcFilters({
+                      ...current,
+                      minProfitableSnapshots: Number(event.target.value),
+                    }),
+                  )
                 }
               />
             </label>
