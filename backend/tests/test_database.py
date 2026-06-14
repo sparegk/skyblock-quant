@@ -310,7 +310,9 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertEqual("2026-06-12T14:00:00Z", row[2])
         self.assertEqual(102.0, row[3])
         self.assertEqual(110.0, row[4])
-        self.assertEqual("first snapshot within 1h horizon tolerance", row[5])
+        self.assertIn("first snapshot within 1h horizon tolerance", row[5])
+        self.assertIn("projected 5.00%", row[5])
+        self.assertIn("actual 7.84%", row[5])
 
     def test_skips_hour_horizon_without_near_snapshot(self) -> None:
         self._insert_evaluated_signal("STEADY_RISE", "2026-06-12T13:30:00Z")
@@ -376,6 +378,13 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertEqual(1.0, summary["win_rate"])
         self.assertGreater(summary["average_return"], 0)
         self.assertGreaterEqual(summary["best_return"], summary["worst_return"])
+        self.assertEqual(2, summary["projection_results"])
+        self.assertGreaterEqual(summary["projection_hit_rate"], 0)
+        self.assertLessEqual(summary["projection_hit_rate"], 1)
+        self.assertIn("average_projection_error", summary)
+        self.assertIn("average_absolute_projection_error", summary)
+        self.assertGreater(summary["average_projected_return"], 0)
+        self.assertGreater(summary["average_realized_projection_return"], 0)
         self.assertIsNotNone(summary["latest_evaluated_at"])
 
     def test_returns_recent_backtest_results(self) -> None:
@@ -390,6 +399,7 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertEqual("PRICE_MOMENTUM", results[0]["signal_type"])
         self.assertEqual("next_snapshot", results[0]["horizon"])
         self.assertIn("return_percent", results[0])
+        self.assertEqual(0.05, results[0]["expected_return"])
 
     def _find_item(
         self, rows: list[dict[str, object]], item_id: str

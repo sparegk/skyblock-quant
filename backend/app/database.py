@@ -1136,11 +1136,14 @@ def generate_rule_based_signals() -> list[dict[str, Any]]:
                     "across recent Bazaar snapshots."
                 ),
                 "confidence": round(confidence, 4),
-                "expected_return": item["gain_percent"],
+                "expected_return": item["projected_rise_percent"],
                 "risk_score": round(risk_score, 4),
                 "severity": "watch",
                 "explanation": {
                     "gain_percent": item["gain_percent"],
+                    "projected_rise_percent": item["projected_rise_percent"],
+                    "projected_target_price": item["projected_target_price"],
+                    "projection_confidence": item["projection_confidence"],
                     "rising_steps": item["rising_steps"],
                     "observed_snapshots": item["observed_snapshots"],
                     "average_volume": item["average_volume"],
@@ -1240,7 +1243,8 @@ def evaluate_signal_backtests(
                 id,
                 item_id,
                 signal_type,
-                source_snapshot
+                source_snapshot,
+                expected_return
             FROM signals
             WHERE item_id != '__MARKET__'
             AND source_snapshot IS NOT NULL
@@ -1342,6 +1346,13 @@ def evaluate_signal_backtests(
                 else 0.0
             )
             return_percent = (exit_row["price"] - entry["price"]) / entry["price"]
+            projection_note = (
+                f"{notes}; projected {signal['expected_return'] * 100:.2f}%, "
+                f"actual {return_percent * 100:.2f}%"
+                if signal["signal_type"] == "PRICE_MOMENTUM"
+                and signal["expected_return"] is not None
+                else notes
+            )
             results.append(
                 (
                     signal["id"],
@@ -1357,7 +1368,7 @@ def evaluate_signal_backtests(
                     max_gain,
                     1 if return_percent >= success_threshold else 0,
                     evaluated_at,
-                    notes,
+                    projection_note,
                 )
             )
 
@@ -1401,6 +1412,12 @@ def get_backtest_summary() -> dict[str, Any]:
         "best_return": 0.0,
         "worst_return": 0.0,
         "average_drawdown": 0.0,
+        "projection_results": 0,
+        "projection_hit_rate": 0.0,
+        "average_projection_error": 0.0,
+        "average_absolute_projection_error": 0.0,
+        "average_projected_return": 0.0,
+        "average_realized_projection_return": 0.0,
         "latest_evaluated_at": None,
     }
 
@@ -1412,11 +1429,14 @@ def get_backtest_summary() -> dict[str, Any]:
         rows = connection.execute(
             """
             SELECT
-                return_percent,
-                max_drawdown_percent,
-                was_successful,
-                evaluated_at
+                backtest_results.return_percent,
+                backtest_results.max_drawdown_percent,
+                backtest_results.was_successful,
+                backtest_results.evaluated_at,
+                signals.expected_return,
+                signals.signal_type
             FROM backtest_results
+            LEFT JOIN signals ON signals.id = backtest_results.signal_id
             ORDER BY return_percent ASC
             """
         ).fetchall()
@@ -1438,6 +1458,19 @@ def get_backtest_summary() -> dict[str, Any]:
         (row["evaluated_at"] for row in rows if row["evaluated_at"]),
         default=None,
     )
+    projection_rows = [
+        row
+        for row in rows
+        if row["signal_type"] == "PRICE_MOMENTUM" and row["expected_return"] is not None
+    ]
+    projection_errors = [
+        row["return_percent"] - row["expected_return"] for row in projection_rows
+    ]
+    projection_hits = [
+        row
+        for row in projection_rows
+        if row["return_percent"] >= row["expected_return"]
+    ]
 
     return {
         "total_results": total_results,
@@ -1448,6 +1481,28 @@ def get_backtest_summary() -> dict[str, Any]:
         "best_return": max(returns),
         "worst_return": min(returns),
         "average_drawdown": sum(drawdowns) / total_results,
+        "projection_results": len(projection_rows),
+        "projection_hit_rate": (
+            len(projection_hits) / len(projection_rows) if projection_rows else 0.0
+        ),
+        "average_projection_error": (
+            sum(projection_errors) / len(projection_errors) if projection_errors else 0.0
+        ),
+        "average_absolute_projection_error": (
+            sum(abs(error) for error in projection_errors) / len(projection_errors)
+            if projection_errors
+            else 0.0
+        ),
+        "average_projected_return": (
+            sum(row["expected_return"] for row in projection_rows) / len(projection_rows)
+            if projection_rows
+            else 0.0
+        ),
+        "average_realized_projection_return": (
+            sum(row["return_percent"] for row in projection_rows) / len(projection_rows)
+            if projection_rows
+            else 0.0
+        ),
         "latest_evaluated_at": latest_evaluated_at,
     }
 
@@ -1476,6 +1531,7 @@ def get_backtest_results(limit: int = 50) -> list[dict[str, Any]]:
                 backtest_results.return_percent,
                 backtest_results.max_drawdown_percent,
                 backtest_results.max_gain_percent,
+                signals.expected_return,
                 backtest_results.was_successful,
                 backtest_results.evaluated_at,
                 backtest_results.notes

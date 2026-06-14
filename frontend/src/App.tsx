@@ -202,6 +202,12 @@ type BacktestSummary = {
   best_return: number
   worst_return: number
   average_drawdown: number
+  projection_results: number
+  projection_hit_rate: number
+  average_projection_error: number
+  average_absolute_projection_error: number
+  average_projected_return: number
+  average_realized_projection_return: number
   latest_evaluated_at: string | null
 }
 
@@ -220,6 +226,7 @@ type BacktestResult = {
   return_percent: number
   max_drawdown_percent: number
   max_gain_percent: number
+  expected_return: number | null
   was_successful: number
   evaluated_at: string
   notes: string | null
@@ -1546,6 +1553,34 @@ function App() {
                     label="drawdown"
                     value={formatPercent(backtestSummary.average_drawdown)}
                     hint="average path low"
+                  />
+                  <DetailMetric
+                    label="projection hit"
+                    value={
+                      backtestSummary.projection_results
+                        ? `${Math.round(backtestSummary.projection_hit_rate * 100)}%`
+                        : 'n/a'
+                    }
+                    hint={`${backtestSummary.projection_results} projected picks`}
+                    positive={backtestSummary.projection_hit_rate >= 0.5}
+                  />
+                  <DetailMetric
+                    label="projected"
+                    value={formatPercent(backtestSummary.average_projected_return)}
+                    hint="average expected rise"
+                    positive={backtestSummary.average_projected_return > 0}
+                  />
+                  <DetailMetric
+                    label="realized"
+                    value={formatPercent(backtestSummary.average_realized_projection_return)}
+                    hint="average actual return"
+                    positive={backtestSummary.average_realized_projection_return >= 0}
+                  />
+                  <DetailMetric
+                    label="avg error"
+                    value={formatPercent(backtestSummary.average_absolute_projection_error)}
+                    hint="absolute forecast miss"
+                    positive={backtestSummary.average_absolute_projection_error <= 0.05}
                   />
                 </div>
 
