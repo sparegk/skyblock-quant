@@ -6,6 +6,7 @@ import sqlite3
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 import json
+import math
 import os
 from pathlib import Path
 from typing import Any
@@ -798,6 +799,41 @@ def get_npc_arbitrage_detail(
     return add_npc_arbitrage_risk_fields(detail)
 
 
+def add_investment_projection_fields(item: dict[str, Any]) -> dict[str, Any]:
+    """Estimate near-term upside from recent momentum, liquidity, and jump risk."""
+    observed_steps = max(item["observed_snapshots"] - 1, 1)
+    trend_consistency = min(max(item["rising_steps"] / observed_steps, 0), 1)
+    trend_multiplier = 0.75 + trend_consistency * 0.5
+    liquidity_multiplier = min(
+        1.15,
+        0.85
+        + min(item["average_volume"] / 200_000, 1) * 0.2
+        + min(item["average_orders"] / 300, 1) * 0.1,
+    )
+    jump_penalty = max(0.55, 1 - item["max_single_jump"] * 1.5)
+    projected_rise_percent = min(
+        0.5,
+        max(0, item["gain_percent"] * trend_multiplier * liquidity_multiplier * jump_penalty),
+    )
+
+    item["projected_rise_percent"] = projected_rise_percent
+    item["projected_target_price"] = item["latest_midpoint_price"] * (
+        1 + projected_rise_percent
+    )
+    item["projection_confidence"] = min(
+        0.95,
+        max(
+            0.1,
+            0.3
+            + trend_consistency * 0.35
+            + min(math.log10(max(item["average_volume"], 1)) / 6, 1) * 0.2
+            + min(item["average_orders"] / 300, 1) * 0.1
+            - min(item["max_single_jump"], 0.5) * 0.4,
+        ),
+    )
+    return item
+
+
 def get_investment_momentum(
     limit: int = 25,
     history_snapshots: int = MOMENTUM_HISTORY_SNAPSHOTS,
@@ -966,7 +1002,7 @@ def get_investment_momentum(
             ),
         ).fetchall()
 
-    return [dict(row) for row in rows]
+    return [add_investment_projection_fields(dict(row)) for row in rows]
 
 
 def get_snapshot_age_minutes(snapshot_time: str | None) -> int | None:

@@ -138,6 +138,16 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertEqual(3, steady_rise["observed_snapshots"])
         self.assertEqual(2, steady_rise["rising_steps"])
         self.assertGreaterEqual(steady_rise["gain_percent"], 0.03)
+        self.assertIn("projected_rise_percent", steady_rise)
+        self.assertIn("projected_target_price", steady_rise)
+        self.assertIn("projection_confidence", steady_rise)
+        self.assertGreater(steady_rise["projected_rise_percent"], steady_rise["gain_percent"])
+        self.assertGreater(
+            steady_rise["projected_target_price"],
+            steady_rise["latest_midpoint_price"],
+        )
+        self.assertGreater(steady_rise["projection_confidence"], 0)
+        self.assertLessEqual(steady_rise["projection_confidence"], 0.95)
 
     def test_generates_and_persists_rule_based_signals(self) -> None:
         generated = database.generate_rule_based_signals()

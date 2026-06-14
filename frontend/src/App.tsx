@@ -172,6 +172,9 @@ type InvestmentMomentumItem = {
   average_volume: number
   average_orders: number
   momentum_score: number
+  projected_rise_percent: number
+  projected_target_price: number
+  projection_confidence: number
 }
 
 type MarketSignal = {
@@ -392,6 +395,10 @@ function getNpcQualityClass(item: NpcArbitrageItem) {
   }
 
   return 'quality-badge'
+}
+
+function getNpcRiskReasonSummary(item: NpcArbitrageItem | NpcArbitrageDetail) {
+  return item.risk_reasons[0] ?? 'risk checks are still building'
 }
 
 function getMomentumLabel(item: InvestmentMomentumItem) {
@@ -1114,6 +1121,12 @@ function App() {
                         positive
                       />
                       <DetailMetric
+                        label="potential rise"
+                        value={formatPercent(featuredInvestment.projected_rise_percent)}
+                        hint={`${formatCompact(featuredInvestment.projected_target_price)} target`}
+                        positive
+                      />
+                      <DetailMetric
                         label="volume"
                         value={formatCompact(featuredInvestment.average_volume)}
                         hint="recent average"
@@ -1138,6 +1151,7 @@ function App() {
                       <span>item</span>
                       <span>price</span>
                       <span>recent move</span>
+                      <span>potential rise</span>
                       <span>volume</span>
                       <span>confidence</span>
                     </div>
@@ -1153,6 +1167,10 @@ function App() {
                         </span>
                         <span>{formatCompact(item.midpoint_price)}</span>
                         <span className="positive">{formatPercent(item.gain_percent)}</span>
+                        <span className="projection-cell">
+                          <b>{formatPercent(item.projected_rise_percent)}</b>
+                          <small>{formatCompact(item.projected_target_price)} target</small>
+                        </span>
                         <span>{formatCompact(item.average_volume)}</span>
                         <span className="table-score">
                           <span>{scoreInvestmentItem(item)}</span>
@@ -1214,7 +1232,10 @@ function App() {
                       <span>{formatCompact(item.bazaar_buy_price)}</span>
                       <span>{formatCompact(item.npc_sell_price)}</span>
                       <span className="positive">{formatCompact(item.profit_per_item)}</span>
-                      <span className={getNpcQualityClass(item)}>{item.risk_label}</span>
+                      <span className="risk-cell">
+                        <span className={getNpcQualityClass(item)}>{item.risk_label}</span>
+                        <small>{getNpcRiskReasonSummary(item)}</small>
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -1278,6 +1299,14 @@ function App() {
                           positive={selectedNpcDetail.spread_percent < 0.2}
                         />
                       </div>
+
+                      {selectedNpcDetail.risk_reasons.length > 0 ? (
+                        <div className="risk-reason-list" aria-label="risk reasons">
+                          {selectedNpcDetail.risk_reasons.map((reason) => (
+                            <span key={reason}>{reason}</span>
+                          ))}
+                        </div>
+                      ) : null}
 
                       <div className="history-table">
                         <MiniLineChart

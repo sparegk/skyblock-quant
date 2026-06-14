@@ -430,7 +430,7 @@
 
 .featured-stat-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
@@ -447,7 +447,7 @@
   border-right: 1px solid var(--border);
 }
 
-.featured-stat-row .detail-metric:nth-child(4n) {
+.featured-stat-row .detail-metric:nth-child(5n) {
   border-right: 0;
 }
 
@@ -585,7 +585,7 @@
 .opportunity-row,
 .arbitrage-row {
   display: grid;
-  grid-template-columns: 32px minmax(230px, 1.18fr) repeat(3, minmax(78px, 0.54fr)) minmax(72px, 0.4fr);
+  grid-template-columns: 32px minmax(220px, 1.18fr) repeat(4, minmax(78px, 0.5fr)) minmax(72px, 0.4fr);
   gap: 10px;
   align-items: center;
   min-height: 42px;
@@ -716,6 +716,38 @@ button.arbitrage-row:hover,
   color: var(--red);
 }
 
+.projection-cell {
+  display: grid;
+  gap: 3px;
+}
+
+.projection-cell b {
+  color: var(--green);
+}
+
+.projection-cell small {
+  margin-top: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.risk-cell {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.risk-cell small {
+  display: -webkit-box;
+  margin-top: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .npc-detail-panel {
   margin-top: 10px;
   border-top: 1px solid var(--border);
@@ -744,6 +776,23 @@ button.arbitrage-row:hover,
 
 .npc-detail-grid .detail-metric {
   border-bottom: 0;
+}
+
+.risk-reason-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.risk-reason-list span {
+  border: 1px solid rgba(255, 208, 90, 0.26);
+  border-radius: 999px;
+  background: rgba(255, 208, 90, 0.08);
+  color: #ffd88a;
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 5px 8px;
 }
 
 .backtest-summary-grid {
@@ -1142,7 +1191,7 @@ button.arbitrage-row:hover,
   .detail-grid div:nth-last-child(-n + 3),
   .featured-stat-row .detail-metric,
   .featured-stat-row .detail-metric:nth-child(3n),
-  .featured-stat-row .detail-metric:nth-child(4n),
+  .featured-stat-row .detail-metric:nth-child(5n),
   .detail-metric,
   .detail-metric:nth-child(3n),
   .detail-metric:nth-last-child(-n + 3) {
