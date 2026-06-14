@@ -18,6 +18,14 @@ import './App.css'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
+const DEFAULT_NPC_FILTERS = {
+  minSellVolume: 10000,
+  minSellOrders: 25,
+  maxProfitMargin: 0.25,
+  historySnapshots: 5,
+  minProfitableSnapshots: 2,
+}
+
 type MarketSummary = {
   database_ready: boolean
   latest_snapshot: string | null
@@ -525,6 +533,8 @@ function App() {
   const [selectedNpcItemId, setSelectedNpcItemId] = useState<string | null>(null)
   const [selectedNpcDetail, setSelectedNpcDetail] = useState<NpcArbitrageDetail | null>(null)
   const [query, setQuery] = useState('')
+  const [showNpcFilters, setShowNpcFilters] = useState(false)
+  const [npcFilters, setNpcFilters] = useState(DEFAULT_NPC_FILTERS)
   const [isLoading, setIsLoading] = useState(true)
   const [isArbitrageLoading, setIsArbitrageLoading] = useState(true)
   const [isNpcDetailLoading, setIsNpcDetailLoading] = useState(false)
@@ -604,7 +614,14 @@ function App() {
         setIsArbitrageLoading(true)
         setError(null)
 
-        const params = new URLSearchParams({ limit: '10' })
+        const params = new URLSearchParams({
+          limit: '10',
+          min_sell_volume: String(npcFilters.minSellVolume),
+          min_sell_orders: String(npcFilters.minSellOrders),
+          max_profit_margin: String(npcFilters.maxProfitMargin),
+          history_snapshots: String(npcFilters.historySnapshots),
+          min_profitable_snapshots: String(npcFilters.minProfitableSnapshots),
+        })
         const response = await fetch(`${API_BASE_URL}/api/arbitrage/npc?${params}`, {
           signal: request.signal,
         })
@@ -639,7 +656,7 @@ function App() {
     loadNpcArbitrage()
 
     return () => request.abort()
-  }, [])
+  }, [npcFilters])
 
   useEffect(() => {
     if (!selectedNpcItemId) {
@@ -776,7 +793,12 @@ function App() {
               all bazaar
               <ChevronDown size={15} />
             </button>
-            <button>
+            <button
+              className={showNpcFilters ? 'active-filter-button' : ''}
+              type="button"
+              aria-expanded={showNpcFilters}
+              onClick={() => setShowNpcFilters((current) => !current)}
+            >
               <SlidersHorizontal size={17} />
               filters
             </button>
@@ -795,6 +817,92 @@ function App() {
             {error ? error : 'backend connected'}
           </span>
         </section>
+
+        {showNpcFilters ? (
+          <section className="filter-panel" aria-label="npc arbitrage risk filters">
+            <label>
+              <span>min volume</span>
+              <input
+                type="number"
+                min="0"
+                step="1000"
+                value={npcFilters.minSellVolume}
+                onChange={(event) =>
+                  setNpcFilters((current) => ({
+                    ...current,
+                    minSellVolume: Math.max(0, Number(event.target.value) || 0),
+                  }))
+                }
+              />
+            </label>
+            <label>
+              <span>min orders</span>
+              <input
+                type="number"
+                min="0"
+                step="5"
+                value={npcFilters.minSellOrders}
+                onChange={(event) =>
+                  setNpcFilters((current) => ({
+                    ...current,
+                    minSellOrders: Math.max(0, Number(event.target.value) || 0),
+                  }))
+                }
+              />
+            </label>
+            <label>
+              <span>max margin</span>
+              <input
+                type="number"
+                min="0.01"
+                max="10"
+                step="0.01"
+                value={npcFilters.maxProfitMargin}
+                onChange={(event) =>
+                  setNpcFilters((current) => ({
+                    ...current,
+                    maxProfitMargin: Math.max(0.01, Number(event.target.value) || 0.01),
+                  }))
+                }
+              />
+            </label>
+            <label>
+              <span>history</span>
+              <input
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                value={npcFilters.historySnapshots}
+                onChange={(event) =>
+                  setNpcFilters((current) => ({
+                    ...current,
+                    historySnapshots: Math.max(1, Number(event.target.value) || 1),
+                  }))
+                }
+              />
+            </label>
+            <label>
+              <span>profitable</span>
+              <input
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                value={npcFilters.minProfitableSnapshots}
+                onChange={(event) =>
+                  setNpcFilters((current) => ({
+                    ...current,
+                    minProfitableSnapshots: Math.max(1, Number(event.target.value) || 1),
+                  }))
+                }
+              />
+            </label>
+            <button type="button" onClick={() => setNpcFilters(DEFAULT_NPC_FILTERS)}>
+              reset
+            </button>
+          </section>
+        ) : null}
 
         <section className="metric-grid">
           <article className="metric-card outlook">
@@ -944,7 +1052,11 @@ function App() {
             <article className="panel">
               <div className="panel-heading">
                 <h2>npc arbitrage</h2>
-                <span>{isArbitrageLoading ? 'updating' : 'liquidity filtered'}</span>
+                <span>
+                  {isArbitrageLoading
+                    ? 'updating'
+                    : `${formatCompact(npcFilters.minSellVolume)} volume floor`}
+                </span>
               </div>
 
               {isArbitrageLoading ? (

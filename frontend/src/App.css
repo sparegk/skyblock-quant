@@ -159,6 +159,12 @@
   text-transform: capitalize;
 }
 
+.toolbar button.active-filter-button {
+  border-color: rgba(98, 238, 89, 0.36);
+  background: rgba(98, 238, 89, 0.11);
+  color: var(--green);
+}
+
 .icon-button {
   width: 40px;
   justify-content: center;
@@ -194,6 +200,60 @@
   border-color: rgba(255, 99, 99, 0.25);
   background: rgba(255, 99, 99, 0.1);
   color: var(--red);
+}
+
+.filter-panel {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px;
+}
+
+.filter-panel label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filter-panel span {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.filter-panel input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: 0;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 10px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-panel input:focus {
+  border-color: rgba(98, 238, 89, 0.42);
+  box-shadow: 0 0 0 3px rgba(98, 238, 89, 0.1);
+}
+
+.filter-panel button {
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  padding: 0 14px;
+  text-transform: capitalize;
 }
 
 .metric-grid {
@@ -1044,7 +1104,8 @@ button.arbitrage-row:hover,
   .forecast-chart-layout,
   .detail-grid,
   .featured-strip,
-  .featured-stat-row {
+  .featured-stat-row,
+  .filter-panel {
     grid-template-columns: 1fr;
   }
 
