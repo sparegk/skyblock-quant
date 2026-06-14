@@ -67,6 +67,9 @@ class ApiRouteTests(unittest.TestCase):
                 min_gain=0.04,
                 max_single_jump=0.25,
                 min_rising_steps=2,
+                min_unit_price=500,
+                min_stack_size=64,
+                min_slot_value=50_000,
             )
 
         self.assertEqual({"items": []}, response)
@@ -79,7 +82,17 @@ class ApiRouteTests(unittest.TestCase):
             min_gain=0.04,
             max_single_jump=0.25,
             min_rising_steps=2,
+            min_unit_price=500,
+            min_stack_size=64,
+            min_slot_value=50_000,
         )
+
+    def test_occurrence_investments_passes_limit(self) -> None:
+        with patch("app.main.get_occurrence_investments", return_value=[]) as occurrences:
+            response = main.occurrence_investments(limit=4)
+
+        self.assertEqual({"items": []}, response)
+        occurrences.assert_called_once_with(limit=4)
 
     def test_latest_signals_passes_query_params(self) -> None:
         with patch("app.main.get_latest_signals", return_value=[]) as latest_signals:

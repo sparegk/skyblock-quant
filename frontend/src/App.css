@@ -795,6 +795,50 @@ button.arbitrage-row:hover,
   padding: 5px 8px;
 }
 
+.occurrence-feature {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.occurrence-feature h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 540;
+}
+
+.occurrence-feature p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.occurrence-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.occurrence-metrics .detail-metric {
+  min-height: 68px;
+  border-bottom: 0;
+}
+
+.occurrence-metrics .detail-metric:nth-child(3n) {
+  border-right: 0;
+}
+
+.source-link {
+  display: inline-flex;
+  margin-top: 10px;
+  color: var(--green);
+  font-size: 13px;
+  text-transform: capitalize;
+}
+
 .backtest-summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1167,6 +1211,7 @@ button.arbitrage-row:hover,
   .detail-grid,
   .featured-strip,
   .featured-stat-row,
+  .occurrence-metrics,
   .filter-panel {
     grid-template-columns: 1fr;
   }
@@ -1192,6 +1237,8 @@ button.arbitrage-row:hover,
   .featured-stat-row .detail-metric,
   .featured-stat-row .detail-metric:nth-child(3n),
   .featured-stat-row .detail-metric:nth-child(5n),
+  .occurrence-metrics .detail-metric,
+  .occurrence-metrics .detail-metric:nth-child(3n),
   .detail-metric,
   .detail-metric:nth-child(3n),
   .detail-metric:nth-last-child(-n + 3) {

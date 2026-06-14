@@ -18,6 +18,7 @@ DATABASE_PATH = Path(
         str(Path(__file__).resolve().parents[2] / "data" / "skyblock_quant.db"),
     )
 )
+OCCURRENCE_INVESTMENTS_PATH = Path(__file__).resolve().parents[2] / "data" / "occurrence_investments.json"
 
 MIN_NPC_ARBITRAGE_SELL_VOLUME = 10_000
 MIN_NPC_ARBITRAGE_SELL_ORDERS = 25
@@ -37,6 +38,12 @@ MIN_MOMENTUM_ORDERS = 25
 MIN_MOMENTUM_GAIN = 0.03
 MAX_MOMENTUM_SINGLE_JUMP = 0.35
 MIN_MOMENTUM_RISING_STEPS = 2
+MIN_INVESTMENT_UNIT_PRICE = 50.0
+MIN_INVESTMENT_STACK_SIZE = 1
+MIN_INVESTMENT_SLOT_VALUE = 5_000.0
+TARGET_INVESTMENT_SLOT_VALUE = 250_000.0
+TARGET_INVESTMENT_PROFIT_PER_SLOT = 25_000.0
+TARGET_NPC_PROFIT_PER_SELL_ACTION = 20_000.0
 STALE_SNAPSHOT_MINUTES = 20
 BACKTEST_HORIZONS = {
     "next_snapshot": None,
@@ -457,6 +464,10 @@ def add_npc_arbitrage_risk_fields(row: dict[str, Any]) -> dict[str, Any]:
         risk_score += 0.1
         risk_reasons.append("bazaar spread is wide")
 
+    if row.get("interaction_efficiency_score", 100) < 25:
+        risk_score += 0.15
+        risk_reasons.append("profit per sell action is low")
+
     risk_score = min(1.0, risk_score)
 
     if row.get("max_recent_price_jump", 0) >= NPC_ARBITRAGE_HIGH_PRICE_JUMP:
@@ -497,6 +508,7 @@ def get_npc_arbitrage(
     if not database_exists():
         return []
 
+    candidate_limit = max(limit * 5, 100)
     with closing(get_connection()) as connection:
         table_exists = connection.execute(
             """
@@ -680,11 +692,22 @@ def get_npc_arbitrage(
                 NPC_ARBITRAGE_VOLUME_CAP,
                 NPC_ARBITRAGE_VOLUME_CAP,
                 max_profit_margin,
-                limit,
+                candidate_limit,
             ),
         ).fetchall()
 
-    return [add_npc_arbitrage_risk_fields(dict(row)) for row in rows]
+    enriched_rows = [
+        add_npc_arbitrage_risk_fields(add_npc_interaction_fields(dict(row))) for row in rows
+    ]
+    enriched_rows.sort(
+        key=lambda item: (
+            item["action_adjusted_profit"],
+            item["history_adjusted_profit"],
+            item["profit_per_sell_action"],
+        ),
+        reverse=True,
+    )
+    return enriched_rows[:limit]
 
 
 def get_npc_arbitrage_detail(
@@ -796,11 +819,110 @@ def get_npc_arbitrage_detail(
         ),
     }
 
-    return add_npc_arbitrage_risk_fields(detail)
+    return add_npc_arbitrage_risk_fields(add_npc_interaction_fields(detail))
+
+
+NON_STACKABLE_CATEGORY_KEYWORDS = (
+    "ACCESSORY",
+    "ARMOR",
+    "BELT",
+    "BOOTS",
+    "BOW",
+    "BRACELET",
+    "CHESTPLATE",
+    "CLOAK",
+    "GARDEN_CHIP",
+    "GLOVES",
+    "HELMET",
+    "LEGGINGS",
+    "NECKLACE",
+    "PET",
+    "SWORD",
+    "WEAPON",
+)
+
+NON_STACKABLE_ITEM_KEYWORDS = (
+    "ACCESSORY",
+    "ARTIFACT",
+    "AXE",
+    "BELT",
+    "BOOTS",
+    "BOW",
+    "BRACELET",
+    "CHESTPLATE",
+    "CHIP",
+    "CLOAK",
+    "DRILL",
+    "FISHING_ROD",
+    "GAUNTLET",
+    "GLOVES",
+    "HELMET",
+    "HOE",
+    "LEGGINGS",
+    "NECKLACE",
+    "PET_ITEM",
+    "PICKAXE",
+    "RING",
+    "ROD",
+    "SHOVEL",
+    "SWORD",
+    "TALISMAN",
+    "WAND",
+)
+
+
+def estimate_investment_stack_size(item: dict[str, Any]) -> int:
+    """Estimate storage stack size when Hypixel metadata has no max-stack field."""
+    item_id = str(item.get("item_id") or "").upper()
+    category = str(item.get("category") or "").upper()
+
+    if any(keyword in category for keyword in NON_STACKABLE_CATEGORY_KEYWORDS):
+        return 1
+
+    if any(keyword in item_id for keyword in NON_STACKABLE_ITEM_KEYWORDS):
+        return 1
+
+    return 64
+
+
+def add_investment_storage_fields(item: dict[str, Any]) -> dict[str, Any]:
+    stack_size = estimate_investment_stack_size(item)
+    storage_slot_value = item["latest_midpoint_price"] * stack_size
+    item["estimated_stack_size"] = stack_size
+    item["storage_slot_value"] = storage_slot_value
+    item["storage_efficiency_score"] = min(
+        100.0,
+        max(0.0, storage_slot_value / TARGET_INVESTMENT_SLOT_VALUE * 100),
+    )
+    return item
+
+
+def add_npc_interaction_fields(item: dict[str, Any]) -> dict[str, Any]:
+    stack_size = estimate_investment_stack_size(item)
+    profit_per_item = item.get("profit_per_item")
+    if profit_per_item is None and isinstance(item.get("latest"), dict):
+        profit_per_item = item["latest"].get("profit_per_item", 0)
+
+    profit_per_item = float(profit_per_item or 0)
+    profit_per_sell_action = profit_per_item * stack_size
+    interaction_efficiency_score = min(
+        100.0,
+        max(0.0, profit_per_sell_action / TARGET_NPC_PROFIT_PER_SELL_ACTION * 100),
+    )
+
+    item["estimated_stack_size"] = stack_size
+    item["profit_per_sell_action"] = profit_per_sell_action
+    item["interaction_efficiency_score"] = interaction_efficiency_score
+    item["action_adjusted_profit"] = (
+        item.get("history_adjusted_profit", profit_per_item)
+        * max(0.1, interaction_efficiency_score / 100)
+    )
+    return item
 
 
 def add_investment_projection_fields(item: dict[str, Any]) -> dict[str, Any]:
     """Estimate near-term upside from recent momentum, liquidity, and jump risk."""
+    add_investment_storage_fields(item)
     observed_steps = max(item["observed_snapshots"] - 1, 1)
     trend_consistency = min(max(item["rising_steps"] / observed_steps, 0), 1)
     trend_multiplier = 0.75 + trend_consistency * 0.5
@@ -820,6 +942,19 @@ def add_investment_projection_fields(item: dict[str, Any]) -> dict[str, Any]:
     item["projected_target_price"] = item["latest_midpoint_price"] * (
         1 + projected_rise_percent
     )
+    item["projected_profit_per_unit"] = item["latest_midpoint_price"] * projected_rise_percent
+    item["projected_profit_per_slot"] = (
+        item["storage_slot_value"] * projected_rise_percent
+    )
+    item["profit_efficiency_score"] = min(
+        100.0,
+        max(
+            0.0,
+            item["projected_profit_per_slot"]
+            / TARGET_INVESTMENT_PROFIT_PER_SLOT
+            * 100,
+        ),
+    )
     item["projection_confidence"] = min(
         0.95,
         max(
@@ -830,6 +965,12 @@ def add_investment_projection_fields(item: dict[str, Any]) -> dict[str, Any]:
             + min(item["average_orders"] / 300, 1) * 0.1
             - min(item["max_single_jump"], 0.5) * 0.4,
         ),
+    )
+    item["investment_score"] = (
+        item["projected_profit_per_slot"]
+        * item["projection_confidence"]
+        * (0.5 + item["storage_efficiency_score"] / 200)
+        * (0.5 + item["profit_efficiency_score"] / 200)
     )
     return item
 
@@ -843,11 +984,15 @@ def get_investment_momentum(
     min_gain: float = MIN_MOMENTUM_GAIN,
     max_single_jump: float = MAX_MOMENTUM_SINGLE_JUMP,
     min_rising_steps: int = MIN_MOMENTUM_RISING_STEPS,
+    min_unit_price: float = MIN_INVESTMENT_UNIT_PRICE,
+    min_stack_size: int = MIN_INVESTMENT_STACK_SIZE,
+    min_slot_value: float = MIN_INVESTMENT_SLOT_VALUE,
 ) -> list[dict[str, Any]]:
     """Return Bazaar items with recent price momentum and enough liquidity."""
     if not database_exists():
         return []
 
+    candidate_limit = max(limit * 8, 100)
     with closing(get_connection()) as connection:
         rows = connection.execute(
             """
@@ -998,11 +1143,127 @@ def get_investment_momentum(
                 min_gain,
                 max_single_jump,
                 min_rising_steps,
-                limit,
+                candidate_limit,
             ),
         ).fetchall()
 
-    return [add_investment_projection_fields(dict(row)) for row in rows]
+    enriched_rows = [add_investment_projection_fields(dict(row)) for row in rows]
+    practical_rows = [
+        item
+        for item in enriched_rows
+        if item["latest_midpoint_price"] >= min_unit_price
+        and item["estimated_stack_size"] >= min_stack_size
+        and item["storage_slot_value"] >= min_slot_value
+    ]
+    practical_rows.sort(
+        key=lambda item: (
+            item["investment_score"],
+            item["projected_rise_percent"],
+            item["storage_slot_value"],
+        ),
+        reverse=True,
+    )
+    return practical_rows[:limit]
+
+
+def get_occurrence_investments(limit: int = 10) -> list[dict[str, Any]]:
+    """Return curated event/update-driven investment theses enriched with market context."""
+    if not OCCURRENCE_INVESTMENTS_PATH.exists():
+        return []
+
+    try:
+        raw_data = json.loads(OCCURRENCE_INVESTMENTS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    raw_items = raw_data.get("items", []) if isinstance(raw_data, dict) else []
+    if not isinstance(raw_items, list):
+        return []
+
+    market_rows: dict[str, dict[str, Any]] = {}
+    if database_exists():
+        with closing(get_connection()) as connection:
+            latest_rows = connection.execute(
+                """
+                SELECT
+                    snapshots.item_id,
+                    COALESCE(items.item_name, snapshots.item_id) AS item_name,
+                    items.category,
+                    items.tier,
+                    (snapshots.buy_price + snapshots.sell_price) / 2.0 AS latest_midpoint_price,
+                    snapshots.buy_volume,
+                    snapshots.sell_volume,
+                    snapshots.buy_orders,
+                    snapshots.sell_orders,
+                    snapshots.collected_at
+                FROM bazaar_snapshots AS snapshots
+                LEFT JOIN items ON items.item_id = snapshots.item_id
+                INNER JOIN (
+                    SELECT item_id, MAX(collected_at) AS latest_snapshot
+                    FROM bazaar_snapshots
+                    GROUP BY item_id
+                ) AS latest
+                    ON latest.item_id = snapshots.item_id
+                    AND latest.latest_snapshot = snapshots.collected_at
+                """
+            ).fetchall()
+        market_rows = {row["item_id"]: dict(row) for row in latest_rows}
+
+    occurrence_items = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            continue
+
+        item_id = str(raw_item.get("item_id", "")).strip().upper()
+        if not item_id:
+            continue
+
+        market_item = market_rows.get(item_id, {})
+        item_name = raw_item.get("item_name") or market_item.get("item_name") or item_id
+        latest_midpoint_price = float(
+            raw_item.get("estimated_unit_price")
+            or market_item.get("latest_midpoint_price")
+            or 0
+        )
+        item = {
+            "item_id": item_id,
+            "item_name": item_name,
+            "category": market_item.get("category") or raw_item.get("category"),
+            "tier": market_item.get("tier") or raw_item.get("tier"),
+            "latest_midpoint_price": latest_midpoint_price,
+            "catalyst_type": raw_item.get("catalyst_type", "occurrence"),
+            "catalyst_summary": raw_item.get("catalyst_summary", ""),
+            "thesis": raw_item.get("thesis", ""),
+            "source_label": raw_item.get("source_label", "curated source"),
+            "source_url": raw_item.get("source_url"),
+            "source_date": raw_item.get("source_date"),
+            "confidence": min(max(float(raw_item.get("confidence", 0.5)), 0), 1),
+            "expected_impact": min(max(float(raw_item.get("expected_impact", 0)), -1), 5),
+            "urgency": raw_item.get("urgency", "watch"),
+            "buy_volume": market_item.get("buy_volume", 0),
+            "sell_volume": market_item.get("sell_volume", 0),
+            "buy_orders": market_item.get("buy_orders", 0),
+            "sell_orders": market_item.get("sell_orders", 0),
+            "collected_at": market_item.get("collected_at"),
+        }
+        add_investment_storage_fields(item)
+        item["occurrence_score"] = (
+            item["confidence"]
+            * max(item["expected_impact"], 0)
+            * max(0.1, item["storage_efficiency_score"] / 100)
+            * 100
+        )
+        occurrence_items.append(item)
+
+    occurrence_items.sort(
+        key=lambda item: (
+            item["occurrence_score"],
+            item["confidence"],
+            item["storage_slot_value"],
+        ),
+        reverse=True,
+    )
+    return occurrence_items[:limit]
 
 
 def get_snapshot_age_minutes(snapshot_time: str | None) -> int | None:
@@ -1121,7 +1382,7 @@ def generate_rule_based_signals() -> list[dict[str, Any]]:
         )
 
     for item in get_investment_momentum(limit=5):
-        confidence = min(0.95, 0.5 + item["gain_percent"] * 3 + item["rising_steps"] * 0.08)
+        confidence = item["projection_confidence"]
         risk_score = min(1.0, item["max_single_jump"] * 2 + (0.15 if item["average_volume"] < 50_000 else 0))
         signals.append(
             {

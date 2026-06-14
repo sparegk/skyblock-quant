@@ -107,6 +107,10 @@ type NpcArbitrageItem = {
   risk_score: number
   risk_label: string
   risk_reasons: string[]
+  estimated_stack_size: number
+  profit_per_sell_action: number
+  interaction_efficiency_score: number
+  action_adjusted_profit: number
   buy_volume: number
   sell_volume: number
   buy_orders: number
@@ -147,6 +151,10 @@ type NpcArbitrageDetail = {
   risk_score: number
   risk_label: string
   risk_reasons: string[]
+  estimated_stack_size: number
+  profit_per_sell_action: number
+  interaction_efficiency_score: number
+  action_adjusted_profit: number
 }
 
 type InvestmentMomentumItem = {
@@ -175,6 +183,39 @@ type InvestmentMomentumItem = {
   projected_rise_percent: number
   projected_target_price: number
   projection_confidence: number
+  estimated_stack_size: number
+  storage_slot_value: number
+  storage_efficiency_score: number
+  investment_score: number
+  projected_profit_per_unit: number
+  projected_profit_per_slot: number
+  profit_efficiency_score: number
+}
+
+type OccurrenceInvestmentItem = {
+  item_id: string
+  item_name: string
+  category: string | null
+  tier: string | null
+  latest_midpoint_price: number
+  catalyst_type: string
+  catalyst_summary: string
+  thesis: string
+  source_label: string
+  source_url: string | null
+  source_date: string | null
+  confidence: number
+  expected_impact: number
+  urgency: string
+  estimated_stack_size: number
+  storage_slot_value: number
+  storage_efficiency_score: number
+  occurrence_score: number
+  buy_volume: number
+  sell_volume: number
+  buy_orders: number
+  sell_orders: number
+  collected_at: string | null
 }
 
 type MarketSignal = {
@@ -375,11 +416,12 @@ function scoreItem(item: BazaarItem) {
 }
 
 function scoreInvestmentItem(item: InvestmentMomentumItem) {
-  const gainScore = Math.min(item.gain_percent * 170, 48)
-  const steadyScore = Math.min(item.rising_steps * 13, 26)
-  const volumeScore = Math.min(item.average_volume / 1_000_000, 18)
+  const gainScore = Math.min(item.projected_rise_percent * 220, 45)
+  const confidenceScore = Math.min(item.projection_confidence * 26, 26)
+  const profitScore = Math.min(item.profit_efficiency_score * 0.2, 20)
+  const steadyScore = Math.min(item.rising_steps * 7, 18)
   const jumpPenalty = item.max_single_jump >= 0.25 ? 12 : 0
-  return Math.max(1, Math.round(gainScore + steadyScore + volumeScore - jumpPenalty))
+  return Math.max(1, Math.round(gainScore + confidenceScore + profitScore + steadyScore - jumpPenalty))
 }
 
 function getNpcQualityLabel(item: NpcArbitrageItem) {
@@ -406,32 +448,6 @@ function getNpcQualityClass(item: NpcArbitrageItem) {
 
 function getNpcRiskReasonSummary(item: NpcArbitrageItem | NpcArbitrageDetail) {
   return item.risk_reasons[0] ?? 'risk checks are still building'
-}
-
-function getMomentumLabel(item: InvestmentMomentumItem) {
-  if (item.max_single_jump >= 0.2) {
-    return 'quick jump'
-  }
-
-  if (item.rising_steps >= item.observed_snapshots - 1) {
-    return 'steady climb'
-  }
-
-  return 'heating up'
-}
-
-function getMomentumLabelClass(item: InvestmentMomentumItem) {
-  const label = getMomentumLabel(item)
-
-  if (label === 'steady climb') {
-    return 'quality-badge stable'
-  }
-
-  if (label === 'quick jump') {
-    return 'quality-badge warning'
-  }
-
-  return 'quality-badge'
 }
 
 function getSignalDotClass(signal: MarketSignal) {
@@ -633,6 +649,7 @@ function App() {
   const [items, setItems] = useState<BazaarItem[]>([])
   const [npcArbitrageItems, setNpcArbitrageItems] = useState<NpcArbitrageItem[]>([])
   const [investmentItems, setInvestmentItems] = useState<InvestmentMomentumItem[]>([])
+  const [occurrenceItems, setOccurrenceItems] = useState<OccurrenceInvestmentItem[]>([])
   const [signals, setSignals] = useState<MarketSignal[]>([])
   const [backtestSummary, setBacktestSummary] = useState<BacktestSummary | null>(null)
   const [backtestResults, setBacktestResults] = useState<BacktestResult[]>([])
@@ -662,6 +679,7 @@ function App() {
           summaryResponse,
           itemsResponse,
           investmentResponse,
+          occurrenceResponse,
           signalsResponse,
           backtestSummaryResponse,
           backtestResultsResponse,
@@ -671,6 +689,7 @@ function App() {
           fetch(`${API_BASE_URL}/api/bazaar/summary`),
           fetch(`${API_BASE_URL}/api/bazaar/latest?limit=40`),
           fetch(`${API_BASE_URL}/api/investments/momentum?limit=10`),
+          fetch(`${API_BASE_URL}/api/investments/occurrences?limit=5`),
           fetch(`${API_BASE_URL}/api/signals/latest?limit=8`),
           fetch(`${API_BASE_URL}/api/backtests/summary`),
           fetch(`${API_BASE_URL}/api/backtests/results?limit=5`),
@@ -681,6 +700,7 @@ function App() {
           !summaryResponse.ok ||
           !itemsResponse.ok ||
           !investmentResponse.ok ||
+          !occurrenceResponse.ok ||
           !signalsResponse.ok ||
           !backtestSummaryResponse.ok ||
           !backtestResultsResponse.ok ||
@@ -694,6 +714,9 @@ function App() {
         const investmentData = (await investmentResponse.json()) as {
           items: InvestmentMomentumItem[]
         }
+        const occurrenceData = (await occurrenceResponse.json()) as {
+          items: OccurrenceInvestmentItem[]
+        }
         const signalsData = (await signalsResponse.json()) as { signals: MarketSignal[] }
         const backtestSummaryData = (await backtestSummaryResponse.json()) as BacktestSummary
         const backtestResultsData = (await backtestResultsResponse.json()) as {
@@ -704,6 +727,7 @@ function App() {
         setSummary(summaryData)
         setItems(itemsData.items)
         setInvestmentItems(investmentData.items)
+        setOccurrenceItems(occurrenceData.items)
         setSignals(signalsData.signals)
         setBacktestSummary(backtestSummaryData)
         setBacktestResults(backtestResultsData.results)
@@ -818,18 +842,22 @@ function App() {
   )
 
   const featuredInvestment = investmentItems[0]
+  const featuredOccurrenceInvestment = occurrenceItems[0]
 
   const filteredInvestments = useMemo(() => {
     const cleanQuery = query.trim().toLowerCase()
+    const watchItems = featuredInvestment
+      ? investmentItems.filter((item) => item.item_id !== featuredInvestment.item_id)
+      : investmentItems
 
     if (!cleanQuery) {
-      return investmentItems.slice(0, 10)
+      return watchItems.slice(0, 10)
     }
 
-    return investmentItems
+    return watchItems
       .filter((item) => item.item_name.toLowerCase().includes(cleanQuery))
       .slice(0, 10)
-  }, [query, investmentItems])
+  }, [featuredInvestment, query, investmentItems])
 
   const marketScore = featuredInvestment ? Math.min(scoreInvestmentItem(featuredInvestment), 99) : 0
   const bestNpcProfit = npcArbitrageItems[0]?.profit_per_item ?? 0
@@ -837,7 +865,6 @@ function App() {
     npcArbitrageItems.find((item) => item.item_id === selectedNpcItemId) ?? null
   const snapshotAgeMinutes = getSnapshotAgeMinutes(summary?.latest_snapshot ?? null)
   const isSnapshotStale = snapshotAgeMinutes !== null && snapshotAgeMinutes > 20
-  const topRankings = rankedItems.slice(0, 3)
   const bestInvestmentGain = featuredInvestment?.gain_percent ?? 0
   const forecastChartValues =
     investmentItems.length > 0
@@ -850,6 +877,7 @@ function App() {
       .map((row) => row.profit_per_item) ?? []
   const backtestWinRate = backtestSummary ? Math.round(backtestSummary.win_rate * 100) : 0
   const latestJob = jobRuns[0]
+  const investmentFitItems = investmentItems.slice(1, 4)
 
   return (
     <div className="dashboard">
@@ -930,8 +958,8 @@ function App() {
         </section>
 
         {showNpcFilters ? (
-          <section className="filter-panel" aria-label="npc arbitrage risk filters">
-            <div className="filter-presets" aria-label="npc arbitrage filter presets">
+          <section className="filter-panel" aria-label="Bazaar to NPC flip risk filters">
+            <div className="filter-presets" aria-label="Bazaar to NPC flip filter presets">
               {NPC_FILTER_PRESETS.map((preset) => (
                 <button
                   className={npcFiltersMatch(npcFilters, preset.value) ? 'active-preset' : ''}
@@ -1055,11 +1083,11 @@ function App() {
               <Sparkles size={30} />
             </div>
             <div>
-              <span>npc flips</span>
+              <span>Bazaar to NPC</span>
               <strong>{npcArbitrageItems.length}</strong>
               <p>
                 {bestNpcProfit > 0
-                  ? `${formatCompact(bestNpcProfit)} best npc profit`
+                  ? `${formatCompact(bestNpcProfit)} best flip profit`
                   : 'waiting for metadata'}
               </p>
             </div>
@@ -1134,9 +1162,10 @@ function App() {
                         positive
                       />
                       <DetailMetric
-                        label="volume"
-                        value={formatCompact(featuredInvestment.average_volume)}
-                        hint="recent average"
+                        label="slot profit"
+                        value={formatCompact(featuredInvestment.projected_profit_per_slot)}
+                        hint={`${featuredInvestment.estimated_stack_size} stack - ${formatCompact(featuredInvestment.storage_slot_value)} slot`}
+                        positive={featuredInvestment.projected_profit_per_slot > 0}
                       />
                       <DetailMetric
                         label="confidence"
@@ -1149,7 +1178,7 @@ function App() {
 
                   <div className="table-section-heading">
                     <h3>items to watch</h3>
-                    <span>top 10</span>
+                    <span>next 10</span>
                   </div>
 
                   <div className="opportunity-table">
@@ -1159,7 +1188,7 @@ function App() {
                       <span>price</span>
                       <span>recent move</span>
                       <span>potential rise</span>
-                      <span>volume</span>
+                      <span>slot profit</span>
                       <span>confidence</span>
                     </div>
                     {filteredInvestments.length > 0 ? filteredInvestments.map((item, index) => (
@@ -1178,7 +1207,12 @@ function App() {
                           <b>{formatPercent(item.projected_rise_percent)}</b>
                           <small>{formatCompact(item.projected_target_price)} target</small>
                         </span>
-                        <span>{formatCompact(item.average_volume)}</span>
+                        <span className="projection-cell">
+                          <b>{formatCompact(item.projected_profit_per_slot)}</b>
+                          <small>
+                            {item.estimated_stack_size} stack - {formatCompact(item.storage_slot_value)} slot
+                          </small>
+                        </span>
                         <span className="table-score">
                           <span>{scoreInvestmentItem(item)}</span>
                         </span>
@@ -1195,7 +1229,7 @@ function App() {
 
             <article className="panel">
               <div className="panel-heading">
-                <h2>npc arbitrage</h2>
+                <h2>Bazaar to NPC flips</h2>
                 <span>
                   {isArbitrageLoading
                     ? 'updating'
@@ -1204,7 +1238,7 @@ function App() {
               </div>
 
               {isArbitrageLoading ? (
-                <p className="empty-state">loading npc arbitrage...</p>
+                <p className="empty-state">loading Bazaar to NPC flips...</p>
               ) : npcArbitrageItems.length > 0 ? (
                 <div className="arbitrage-table">
                   <div className="arbitrage-row table-head">
@@ -1212,7 +1246,7 @@ function App() {
                     <span>item</span>
                     <span>bazaar buy</span>
                     <span>npc sell</span>
-                    <span>profit per item</span>
+                    <span>sell action</span>
                     <span>risk</span>
                   </div>
                   {npcArbitrageItems.slice(0, 10).map((item, index) => (
@@ -1238,7 +1272,10 @@ function App() {
                       </span>
                       <span>{formatCompact(item.bazaar_buy_price)}</span>
                       <span>{formatCompact(item.npc_sell_price)}</span>
-                      <span className="positive">{formatCompact(item.profit_per_item)}</span>
+                      <span className="projection-cell">
+                        <b className="positive">{formatCompact(item.profit_per_sell_action)}</b>
+                        <small>{formatCompact(item.profit_per_item)} each</small>
+                      </span>
                       <span className="risk-cell">
                         <span className={getNpcQualityClass(item)}>{item.risk_label}</span>
                         <small>{getNpcRiskReasonSummary(item)}</small>
@@ -1248,7 +1285,7 @@ function App() {
                 </div>
               ) : (
                 <p className="empty-state">
-                  run the item metadata collector to calculate npc arbitrage.
+                  run the item metadata collector to calculate Bazaar to NPC flips.
                 </p>
               )}
 
@@ -1282,9 +1319,9 @@ function App() {
                           positive={selectedNpcDetail.profit_consistency >= 0.75}
                         />
                         <DetailMetric
-                          label="latest profit"
-                          value={formatCompact(selectedNpcDetail.latest.profit_per_item)}
-                          hint="coins per item"
+                          label="sell action"
+                          value={formatCompact(selectedNpcDetail.profit_per_sell_action)}
+                          hint={`${formatCompact(selectedNpcDetail.latest.profit_per_item)} each - ${selectedNpcDetail.estimated_stack_size} stack`}
                           positive={selectedNpcDetail.latest.profit_per_item > 0}
                         />
                         <DetailMetric
@@ -1369,20 +1406,68 @@ function App() {
               </div>
             </article>
 
+            <article className="panel occurrence-panel">
+              <div className="panel-heading">
+                <h2>occurrence investment</h2>
+                <span>event catalyst</span>
+              </div>
+              {featuredOccurrenceInvestment ? (
+                <>
+                  <div className="occurrence-feature">
+                    <span className="quality-badge stable">
+                      {featuredOccurrenceInvestment.catalyst_type}
+                    </span>
+                    <h3>{featuredOccurrenceInvestment.item_name}</h3>
+                    <p>{featuredOccurrenceInvestment.catalyst_summary}</p>
+                  </div>
+                  <div className="occurrence-metrics">
+                    <DetailMetric
+                      label="expected impact"
+                      value={formatPercent(featuredOccurrenceInvestment.expected_impact)}
+                      hint={featuredOccurrenceInvestment.urgency}
+                      positive={featuredOccurrenceInvestment.expected_impact > 0}
+                    />
+                    <DetailMetric
+                      label="confidence"
+                      value={`${Math.round(featuredOccurrenceInvestment.confidence * 100)}%`}
+                      hint={featuredOccurrenceInvestment.source_label}
+                      positive={featuredOccurrenceInvestment.confidence >= 0.6}
+                    />
+                    <DetailMetric
+                      label="slot value"
+                      value={formatCompact(featuredOccurrenceInvestment.storage_slot_value)}
+                      hint={`${featuredOccurrenceInvestment.estimated_stack_size} stack`}
+                      positive={featuredOccurrenceInvestment.storage_slot_value >= 5_000}
+                    />
+                  </div>
+                  <p className="panel-note">{featuredOccurrenceInvestment.thesis}</p>
+                  {featuredOccurrenceInvestment.source_url ? (
+                    <a className="source-link" href={featuredOccurrenceInvestment.source_url}>
+                      source
+                    </a>
+                  ) : null}
+                </>
+              ) : (
+                <p className="empty-state">
+                  add trusted update, alpha, rumor, or video catalysts to the curated occurrence list.
+                </p>
+              )}
+            </article>
+
             <article className="panel compact-panel">
               <div className="panel-heading">
-                <h2>items heating up</h2>
-                <span>price momentum</span>
+                <h2>investment fit</h2>
+                <span>slot profit</span>
               </div>
-              {investmentItems.length > 0 ? (
-                investmentItems.map((item, index) => (
+              {investmentFitItems.length > 0 ? (
+                investmentFitItems.map((item, index) => (
                   <div className="ranking-card" key={item.item_id}>
                     <span className="rank-number">{index + 1}</span>
                     <div>
                       <b>{item.item_name}</b>
                       <small>
-                        {formatPercent(item.gain_percent)} gain ·{' '}
-                        {formatCompact(item.average_volume)} volume
+                        {formatCompact(item.projected_profit_per_slot)} slot profit -{' '}
+                        {formatPercent(item.projected_rise_percent)} projected
                       </small>
                     </div>
                     <MiniLineChart
@@ -1394,36 +1479,14 @@ function App() {
                         item.latest_midpoint_price,
                       ]}
                     />
-                    <span className={getMomentumLabelClass(item)}>
-                      {getMomentumLabel(item)}
+                    <span className="table-score">
+                      <span>{scoreInvestmentItem(item)}</span>
                     </span>
                   </div>
                 ))
               ) : (
-                <p className="empty-state">waiting for more price history.</p>
+                <p className="empty-state">waiting for more practical investment candidates.</p>
               )}
-            </article>
-
-            <article className="panel compact-panel">
-              <div className="panel-heading">
-                <h2>rankings preview</h2>
-                <span>top scored</span>
-              </div>
-              {topRankings.map((item, index) => (
-                <div className="ranking-card" key={item.item_id}>
-                  <span className="rank-number">{index + 1}</span>
-                  <div>
-                    <b>{formatItemName(item.item_id)}</b>
-                    <small>
-                      {formatCompact(item.buy_volume + item.sell_volume)} volume ·{' '}
-                      {spreadPercent(item).toFixed(2)}% spread
-                    </small>
-                  </div>
-                  <span className="table-score">
-                    <span>{scoreItem(item)}</span>
-                  </span>
-                </div>
-              ))}
             </article>
 
             <article className="panel compact-panel">
@@ -1434,7 +1497,7 @@ function App() {
               <div className="insight-row">
                 <FileText size={16} />
                 <div>
-                  <b>npc arbitrage baseline</b>
+                  <b>Bazaar to NPC baseline</b>
                   <small>metadata joined with latest bazaar snapshot</small>
                 </div>
               </div>
@@ -1442,7 +1505,7 @@ function App() {
                 <FileText size={16} />
                 <div>
                   <b>liquidity review</b>
-                  <small>npc flips must hold across recent snapshots</small>
+                  <small>flips must hold across recent snapshots</small>
                 </div>
               </div>
               <div className="insight-row">

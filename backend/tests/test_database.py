@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -13,11 +14,16 @@ class NpcArbitrageTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.original_database_path = database.DATABASE_PATH
+        self.original_occurrence_investments_path = database.OCCURRENCE_INVESTMENTS_PATH
         database.DATABASE_PATH = Path(self.temp_dir.name) / "test.db"
+        database.OCCURRENCE_INVESTMENTS_PATH = (
+            Path(self.temp_dir.name) / "occurrence_investments.json"
+        )
         self._create_test_database(database.DATABASE_PATH)
 
     def tearDown(self) -> None:
         database.DATABASE_PATH = self.original_database_path
+        database.OCCURRENCE_INVESTMENTS_PATH = self.original_occurrence_investments_path
         self.temp_dir.cleanup()
 
     def test_filters_and_sorts_npc_arbitrage_candidates(self) -> None:
@@ -37,6 +43,9 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertEqual(90.0, high_estimated["bazaar_buy_price"])
         self.assertEqual(100.0, high_estimated["bazaar_sell_price"])
         self.assertEqual(10.0, high_estimated["profit_per_item"])
+        self.assertEqual(64, high_estimated["estimated_stack_size"])
+        self.assertEqual(640.0, high_estimated["profit_per_sell_action"])
+        self.assertIn("action_adjusted_profit", high_estimated)
 
     def test_returns_history_fields_for_stable_candidates(self) -> None:
         rows = database.get_npc_arbitrage(limit=10)
@@ -54,6 +63,7 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertIn("risk_reasons", high_estimated)
         self.assertIn("max_recent_price_jump", high_estimated)
         self.assertIn("spread_percent", high_estimated)
+        self.assertIn("interaction_efficiency_score", high_estimated)
 
     def test_allows_custom_filter_thresholds(self) -> None:
         rows = database.get_npc_arbitrage(
@@ -76,7 +86,10 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertEqual("thin liquidity", low_volume["risk_label"])
         self.assertEqual("thin liquidity", low_orders["risk_label"])
         self.assertEqual("possible manipulation", high_margin["risk_label"])
-        self.assertGreater(high_margin["risk_score"], low_volume["risk_score"])
+        self.assertGreater(low_volume["risk_score"], 0.3)
+        self.assertGreater(high_margin["risk_score"], 0.3)
+        self.assertIn("profit per sell action is low", low_volume["risk_reasons"])
+        self.assertIn("profit margin is unusually wide", high_margin["risk_reasons"])
 
     def test_returns_empty_without_items_table(self) -> None:
         database.DATABASE_PATH = Path(self.temp_dir.name) / "missing_items.db"
@@ -131,16 +144,23 @@ class NpcArbitrageTests(unittest.TestCase):
         item_ids = [row["item_id"] for row in rows]
 
         self.assertIn("STEADY_RISE", item_ids)
+        self.assertIn("RAREFINDER_GARDEN_CHIP", item_ids)
         self.assertNotIn("ONE_PUMP", item_ids)
         self.assertNotIn("LOW_VOLUME_INVEST", item_ids)
 
         steady_rise = self._find_item(rows, "STEADY_RISE")
+        rarefinder = self._find_item(rows, "RAREFINDER_GARDEN_CHIP")
         self.assertEqual(3, steady_rise["observed_snapshots"])
         self.assertEqual(2, steady_rise["rising_steps"])
         self.assertGreaterEqual(steady_rise["gain_percent"], 0.03)
         self.assertIn("projected_rise_percent", steady_rise)
         self.assertIn("projected_target_price", steady_rise)
         self.assertIn("projection_confidence", steady_rise)
+        self.assertEqual(64, steady_rise["estimated_stack_size"])
+        self.assertGreaterEqual(steady_rise["storage_slot_value"], 5_000)
+        self.assertIn("investment_score", steady_rise)
+        self.assertEqual(1, rarefinder["estimated_stack_size"])
+        self.assertGreater(rarefinder["projected_profit_per_slot"], steady_rise["projected_profit_per_slot"])
         self.assertGreater(steady_rise["projected_rise_percent"], steady_rise["gain_percent"])
         self.assertGreater(
             steady_rise["projected_target_price"],
@@ -148,6 +168,35 @@ class NpcArbitrageTests(unittest.TestCase):
         )
         self.assertGreater(steady_rise["projection_confidence"], 0)
         self.assertLessEqual(steady_rise["projection_confidence"], 0.95)
+
+    def test_returns_occurrence_investments_with_market_context(self) -> None:
+        database.OCCURRENCE_INVESTMENTS_PATH.write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "item_id": "STEADY_RISE",
+                            "catalyst_type": "alpha update",
+                            "catalyst_summary": "new recipe test uses this item",
+                            "thesis": "stackable commodity with clear demand catalyst",
+                            "source_label": "manual test catalyst",
+                            "confidence": 0.7,
+                            "expected_impact": 0.2,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        rows = database.get_occurrence_investments(limit=5)
+
+        self.assertEqual(1, len(rows))
+        self.assertEqual("STEADY_RISE", rows[0]["item_id"])
+        self.assertEqual(64, rows[0]["estimated_stack_size"])
+        self.assertGreater(rows[0]["storage_slot_value"], 0)
+        self.assertGreater(rows[0]["occurrence_score"], 0)
+        self.assertEqual("alpha update", rows[0]["catalyst_type"])
 
     def test_generates_and_persists_rule_based_signals(self) -> None:
         generated = database.generate_rule_based_signals()
@@ -509,6 +558,39 @@ class NpcArbitrageTests(unittest.TestCase):
                 ("2026-06-12T13:00:00Z", "STEADY_RISE", 100, 104, 80_000, 90_000, 120, 130, -4),
                 ("2026-06-12T13:30:00Z", "STEADY_RISE", 104, 108, 82_000, 91_000, 125, 132, -4),
                 ("2026-06-12T14:00:00Z", "STEADY_RISE", 108, 112, 85_000, 93_000, 130, 135, -4),
+                (
+                    "2026-06-12T13:00:00Z",
+                    "RAREFINDER_GARDEN_CHIP",
+                    1_000_000,
+                    1_040_000,
+                    80_000,
+                    90_000,
+                    120,
+                    130,
+                    -40_000,
+                ),
+                (
+                    "2026-06-12T13:30:00Z",
+                    "RAREFINDER_GARDEN_CHIP",
+                    1_040_000,
+                    1_080_000,
+                    82_000,
+                    91_000,
+                    125,
+                    132,
+                    -40_000,
+                ),
+                (
+                    "2026-06-12T14:00:00Z",
+                    "RAREFINDER_GARDEN_CHIP",
+                    1_080_000,
+                    1_120_000,
+                    85_000,
+                    93_000,
+                    130,
+                    135,
+                    -40_000,
+                ),
                 ("2026-06-12T13:00:00Z", "ONE_PUMP", 100, 104, 80_000, 90_000, 120, 130, -4),
                 ("2026-06-12T13:30:00Z", "ONE_PUMP", 101, 105, 82_000, 91_000, 125, 132, -4),
                 ("2026-06-12T14:00:00Z", "ONE_PUMP", 190, 200, 85_000, 93_000, 130, 135, -10),
@@ -600,6 +682,7 @@ class NpcArbitrageTests(unittest.TestCase):
                 ("NO_PROFIT", "No Profit", "test", "COMMON", 100),
                 ("BOBBIN_SCRIPTURES", "Bobbin Scriptures", "test", "RARE", 250_000),
                 ("STEADY_RISE", "Steady Rise", "test", "RARE", None),
+                ("RAREFINDER_GARDEN_CHIP", "Rarefinder Chip", "GARDEN_CHIP", "RARE", None),
                 ("ONE_PUMP", "One Pump", "test", "RARE", None),
                 ("LOW_VOLUME_INVEST", "Low Volume Invest", "test", "RARE", None),
             ]

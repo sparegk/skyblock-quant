@@ -11,6 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import (
     MAX_NPC_ARBITRAGE_MARGIN,
     MAX_MOMENTUM_SINGLE_JUMP,
+    MIN_INVESTMENT_SLOT_VALUE,
+    MIN_INVESTMENT_STACK_SIZE,
+    MIN_INVESTMENT_UNIT_PRICE,
     MIN_MOMENTUM_GAIN,
     MIN_MOMENTUM_OBSERVED_SNAPSHOTS,
     MIN_MOMENTUM_ORDERS,
@@ -31,6 +34,7 @@ from app.database import (
     get_market_summary,
     get_npc_arbitrage,
     get_npc_arbitrage_detail,
+    get_occurrence_investments,
     get_top_spreads,
     search_items,
 )
@@ -142,6 +146,13 @@ def investment_momentum(
     min_gain: Annotated[float, Query(ge=0, le=10)] = MIN_MOMENTUM_GAIN,
     max_single_jump: Annotated[float, Query(ge=0, le=10)] = MAX_MOMENTUM_SINGLE_JUMP,
     min_rising_steps: Annotated[int, Query(ge=1, le=100)] = MIN_MOMENTUM_RISING_STEPS,
+    min_unit_price: Annotated[float, Query(ge=0, le=1_000_000_000)] = (
+        MIN_INVESTMENT_UNIT_PRICE
+    ),
+    min_stack_size: Annotated[int, Query(ge=1, le=64)] = MIN_INVESTMENT_STACK_SIZE,
+    min_slot_value: Annotated[float, Query(ge=0, le=1_000_000_000)] = (
+        MIN_INVESTMENT_SLOT_VALUE
+    ),
 ) -> dict[str, object]:
     return {
         "items": get_investment_momentum(
@@ -153,8 +164,18 @@ def investment_momentum(
             min_gain=min_gain,
             max_single_jump=max_single_jump,
             min_rising_steps=min_rising_steps,
+            min_unit_price=min_unit_price,
+            min_stack_size=min_stack_size,
+            min_slot_value=min_slot_value,
         )
     }
+
+
+@app.get("/api/investments/occurrences")
+def occurrence_investments(
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
+) -> dict[str, object]:
+    return {"items": get_occurrence_investments(limit=limit)}
 
 
 @app.get("/api/signals/latest")
