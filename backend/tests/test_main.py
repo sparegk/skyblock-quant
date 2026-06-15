@@ -19,6 +19,18 @@ class ApiRouteTests(unittest.TestCase):
                 main.get_cors_origins(),
             )
 
+    def test_startup_refresh_backtests_can_be_disabled(self) -> None:
+        with (
+            patch.dict(
+                "os.environ",
+                {"SKYBLOCK_QUANT_REFRESH_BACKTESTS_ON_STARTUP": "false"},
+            ),
+            patch("app.main.refresh_backtests_on_startup") as refresh,
+        ):
+            main.startup_refresh_backtests()
+
+        refresh.assert_not_called()
+
     def test_npc_arbitrage_passes_filter_query_params(self) -> None:
         with patch("app.main.get_npc_arbitrage", return_value=[]) as get_npc_arbitrage:
             response = main.npc_arbitrage(

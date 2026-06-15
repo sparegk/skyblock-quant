@@ -70,3 +70,11 @@ def get_cors_origins() -> list[str]:
 
 def get_raw_dir() -> Path:
     return Path(os.getenv("SKYBLOCK_QUANT_RAW_DIR", str(DEFAULT_RAW_DIR)))
+
+
+def get_bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    return value.strip().lower() in {"1", "true", "yes", "on"}

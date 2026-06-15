@@ -40,6 +40,7 @@ from app.database import (
     search_items,
 )
 from app.settings import get_cors_origins
+from app.settings import get_bool_env
 
 
 app = FastAPI(title="SkyBlock Quant API")
@@ -68,6 +69,9 @@ def refresh_backtests_on_startup(limit: int = 1000) -> dict[str, int]:
 
 @app.on_event("startup")
 def startup_refresh_backtests() -> None:
+    if not get_bool_env("SKYBLOCK_QUANT_REFRESH_BACKTESTS_ON_STARTUP", True):
+        return
+
     refresh_backtests_on_startup()
 
 
