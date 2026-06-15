@@ -7,17 +7,14 @@ from contextlib import closing
 from datetime import UTC, datetime, timedelta
 import json
 import math
-import os
 from pathlib import Path
 from typing import Any
 
+from app.settings import get_database_config
 
-DATABASE_PATH = Path(
-    os.getenv(
-        "SKYBLOCK_QUANT_DB_PATH",
-        str(Path(__file__).resolve().parents[2] / "data" / "skyblock_quant.db"),
-    )
-)
+
+DATABASE_CONFIG = get_database_config()
+DATABASE_PATH = DATABASE_CONFIG.sqlite_path
 OCCURRENCE_INVESTMENTS_PATH = Path(__file__).resolve().parents[2] / "data" / "occurrence_investments.json"
 
 MIN_NPC_ARBITRAGE_SELL_VOLUME = 10_000
@@ -93,13 +90,33 @@ def get_backtest_horizon_tolerance(horizon: str) -> timedelta | None:
 
 def get_connection() -> sqlite3.Connection:
     """Open a SQLite connection that returns rows like dictionaries."""
+    if DATABASE_CONFIG.is_postgres:
+        raise RuntimeError(
+            "PostgreSQL is configured but this release still uses SQLite SQL. "
+            "Run with SKYBLOCK_QUANT_DB_PATH locally or complete the SQL "
+            "dialect migration before deploying against Postgres."
+        )
+
     connection = sqlite3.connect(DATABASE_PATH)
     connection.row_factory = sqlite3.Row
     return connection
 
 
 def database_exists() -> bool:
+    if DATABASE_CONFIG.is_postgres:
+        return False
+
     return DATABASE_PATH.exists()
+
+
+def get_database_status() -> dict[str, Any]:
+    """Return database configuration details safe for health checks."""
+    return {
+        "backend": DATABASE_CONFIG.backend,
+        "ready": database_exists(),
+        "sqlite_path": str(DATABASE_PATH) if DATABASE_CONFIG.is_sqlite else None,
+        "postgres_configured": DATABASE_CONFIG.is_postgres,
+    }
 
 
 def create_signal_tables(connection: sqlite3.Connection) -> None:

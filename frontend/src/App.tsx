@@ -298,10 +298,12 @@ type MiniLineChartProps = {
   compact?: boolean
 }
 
+type ActiveView = 'home' | 'opportunities'
+
 const navItems = [
-  { label: 'home', icon: Home, active: true },
+  { label: 'home', icon: Home, view: 'home' },
   { label: 'markets', icon: Boxes },
-  { label: 'opportunities', icon: Sparkles },
+  { label: 'opportunities', icon: Sparkles, view: 'opportunities' },
   { label: 'forecasts', icon: LineChart },
   { label: 'rankings', icon: Gauge },
   { label: 'research', icon: FileText },
@@ -645,6 +647,7 @@ function getSnapshotAgeMinutes(value: string | null) {
 }
 
 function App() {
+  const [activeView, setActiveView] = useState<ActiveView>('home')
   const [summary, setSummary] = useState<MarketSummary | null>(null)
   const [items, setItems] = useState<BazaarItem[]>([])
   const [npcArbitrageItems, setNpcArbitrageItems] = useState<NpcArbitrageItem[]>([])
@@ -890,9 +893,21 @@ function App() {
         <nav className="nav-list" aria-label="main navigation">
           {navItems.map((item) => {
             const Icon = item.icon
+            const isActive = item.view === activeView
+            const isEnabled = Boolean(item.view)
 
             return (
-              <button className={item.active ? 'nav-item active' : 'nav-item'} key={item.label}>
+              <button
+                className={isActive ? 'nav-item active' : 'nav-item'}
+                disabled={!isEnabled}
+                key={item.label}
+                onClick={() => {
+                  if (item.view) {
+                    setActiveView(item.view as ActiveView)
+                  }
+                }}
+                type="button"
+              >
                 <Icon size={18} />
                 <span>{item.label}</span>
                 {item.badge ? <em>{item.badge}</em> : null}
@@ -949,8 +964,12 @@ function App() {
 
         <section className="title-row">
           <div>
-            <h1>home dashboard</h1>
-            <p>a unified view of the hypixel skyblock economy.</p>
+            <h1>{activeView === 'opportunities' ? 'npc arbitrage opportunities' : 'home dashboard'}</h1>
+            <p>
+              {activeView === 'opportunities'
+                ? 'ranked Bazaar to NPC flips with liquidity, consistency, and risk checks.'
+                : 'a unified view of the hypixel skyblock economy.'}
+            </p>
           </div>
           <span className={error ? 'connection offline' : 'connection'}>
             {error ? error : 'backend connected'}
@@ -1065,6 +1084,201 @@ function App() {
           </section>
         ) : null}
 
+        {activeView === 'opportunities' ? (
+          <section className="opportunity-page-grid">
+            <article className="panel opportunity-page-panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>Bazaar to NPC flips</h2>
+                  <span>
+                    {npcArbitrageItems.length
+                      ? `${npcArbitrageItems.length} ranked candidates`
+                      : 'no candidates'}
+                  </span>
+                </div>
+                <span>{formatSnapshotTime(summary?.latest_snapshot ?? null)}</span>
+              </div>
+
+              <div className="npc-summary-grid">
+                <DetailMetric
+                  label="best action"
+                  value={npcArbitrageItems[0] ? formatCompact(npcArbitrageItems[0].profit_per_sell_action) : 'n/a'}
+                  hint={npcArbitrageItems[0]?.item_name ?? 'waiting for metadata'}
+                  positive={Boolean(npcArbitrageItems[0])}
+                />
+                <DetailMetric
+                  label="stable flips"
+                  value={npcArbitrageItems.filter((item) => item.risk_label === 'stable').length}
+                  hint="risk label stable"
+                  positive
+                />
+                <DetailMetric
+                  label="volume floor"
+                  value={formatCompact(npcFilters.minSellVolume)}
+                  hint={`${formatNumber(npcFilters.minSellOrders)} min orders`}
+                />
+                <DetailMetric
+                  label="history rule"
+                  value={`${npcFilters.minProfitableSnapshots} / ${npcFilters.historySnapshots}`}
+                  hint="profitable snapshots"
+                  positive
+                />
+              </div>
+
+              {isArbitrageLoading ? (
+                <p className="empty-state">loading Bazaar to NPC candidates...</p>
+              ) : npcArbitrageItems.length > 0 ? (
+                <div className="arbitrage-table opportunity-page-table">
+                  <div className="arbitrage-row table-head">
+                    <span>#</span>
+                    <span>item</span>
+                    <span>bazaar buy</span>
+                    <span>npc sell</span>
+                    <span>sell action</span>
+                    <span>risk</span>
+                  </div>
+                  {npcArbitrageItems.map((item, index) => (
+                    <button
+                      className={
+                        selectedNpcItemId === item.item_id
+                          ? 'arbitrage-row selected'
+                          : 'arbitrage-row'
+                      }
+                      key={item.item_id}
+                      type="button"
+                      onClick={() => setSelectedNpcItemId(item.item_id)}
+                    >
+                      <span>{index + 1}</span>
+                      <span className="arbitrage-item-cell">
+                        <b>{item.item_name}</b>
+                        <small>
+                          {item.item_id}
+                          <span className={getNpcQualityClass(item)}>
+                            {getNpcQualityLabel(item)}
+                          </span>
+                        </small>
+                      </span>
+                      <span>{formatCompact(item.bazaar_buy_price)}</span>
+                      <span>{formatCompact(item.npc_sell_price)}</span>
+                      <span className="projection-cell">
+                        <b className="positive">{formatCompact(item.profit_per_sell_action)}</b>
+                        <small>{formatCompact(item.profit_per_item)} each</small>
+                      </span>
+                      <span className="risk-cell">
+                        <span className={getNpcQualityClass(item)}>{item.risk_label}</span>
+                        <small>{getNpcRiskReasonSummary(item)}</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty-state">
+                  run the item metadata collector to calculate Bazaar to NPC flips.
+                </p>
+              )}
+            </article>
+
+            <aside className="opportunity-detail-column">
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>risk filters</h2>
+                  <span>{npcFiltersMatch(npcFilters, DEFAULT_NPC_FILTERS) ? 'balanced' : 'custom'}</span>
+                </div>
+                <div className="filter-presets compact-filter-presets">
+                  {NPC_FILTER_PRESETS.map((preset) => (
+                    <button
+                      className={npcFiltersMatch(npcFilters, preset.value) ? 'active-preset' : ''}
+                      type="button"
+                      key={preset.label}
+                      onClick={() => setNpcFilters(preset.value)}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <button className="secondary-action" type="button" onClick={() => setShowNpcFilters((current) => !current)}>
+                  {showNpcFilters ? 'hide advanced filters' : 'show advanced filters'}
+                </button>
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>selected flip</h2>
+                  {selectedNpcItem ? (
+                    <span className={getNpcQualityClass(selectedNpcItem)}>
+                      {selectedNpcItem.risk_label}
+                    </span>
+                  ) : (
+                    <span>none</span>
+                  )}
+                </div>
+
+                {selectedNpcItem ? (
+                  isNpcDetailLoading ? (
+                    <p className="empty-state">loading item history...</p>
+                  ) : selectedNpcDetail ? (
+                    <>
+                      <div className="selected-item-header">
+                        <ItemIcon item={selectedNpcItem} />
+                        <div>
+                          <h3>{selectedNpcItem.item_name}</h3>
+                          <span>{selectedNpcItem.item_id}</span>
+                        </div>
+                      </div>
+                      <div className="npc-detail-grid compact-npc-detail-grid">
+                        <DetailMetric
+                          label="trend"
+                          value={getNpcTrend(selectedNpcDetail)}
+                          hint="recent profit direction"
+                          positive={getNpcTrend(selectedNpcDetail) === 'improving'}
+                        />
+                        <DetailMetric
+                          label="sell action"
+                          value={formatCompact(selectedNpcDetail.profit_per_sell_action)}
+                          hint={`${formatCompact(selectedNpcDetail.latest.profit_per_item)} each`}
+                          positive={selectedNpcDetail.latest.profit_per_item > 0}
+                        />
+                        <DetailMetric
+                          label="risk score"
+                          value={`${Math.round(selectedNpcDetail.risk_score * 100)} / 100`}
+                          hint={selectedNpcDetail.risk_label}
+                          positive={selectedNpcDetail.risk_score < 0.3}
+                        />
+                        <DetailMetric
+                          label="consistency"
+                          value={`${selectedNpcDetail.profitable_snapshots} / ${selectedNpcDetail.observed_snapshots}`}
+                          hint="profitable snapshots"
+                          positive={selectedNpcDetail.profit_consistency >= 0.75}
+                        />
+                      </div>
+                      <div className="history-table">
+                        <MiniLineChart
+                          label={`${selectedNpcItem.item_name} npc profit history`}
+                          values={selectedNpcProfitChart}
+                        />
+                        {selectedNpcDetail.history.slice(0, 5).map((row) => (
+                          <div className="history-row" key={row.collected_at}>
+                            <span>{formatSnapshotTime(row.collected_at)}</span>
+                            <b className={row.is_profitable ? 'positive' : ''}>
+                              {formatCompact(row.profit_per_item)}
+                            </b>
+                            <span>{formatCompact(row.sell_volume)} volume</span>
+                            <span>{formatNumber(row.sell_orders)} orders</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="empty-state">no recent history for this item.</p>
+                  )
+                ) : (
+                  <p className="empty-state">select a flip to inspect history and risk.</p>
+                )}
+              </article>
+            </aside>
+          </section>
+        ) : (
+          <>
         <section className="metric-grid">
           <article className="metric-card outlook">
             <div className="metric-icon">
@@ -1697,6 +1911,8 @@ function App() {
             )}
           </article>
         </section>
+          </>
+        )}
       </main>
     </div>
   )

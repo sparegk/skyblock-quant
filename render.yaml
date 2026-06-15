@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: skyblock-quant-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: SKYBLOCK_QUANT_CORS_ORIGINS
+        sync: false
+      - key: SKYBLOCK_QUANT_DB_PATH
+        value: /var/data/skyblock_quant.db
+
+  - type: worker
+    name: skyblock-quant-worker
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.collectors.scheduler
+    envVars:
+      - key: SKYBLOCK_QUANT_DB_PATH
+        value: /var/data/skyblock_quant.db
+      - key: SKYBLOCK_QUANT_RAW_DIR
+        value: /var/data/raw
+      - key: SKYBLOCK_QUANT_COLLECT_INTERVAL_MINUTES
+        value: 5
+      - key: SKYBLOCK_QUANT_BACKTEST_HORIZONS
+        value: next_snapshot,1h,6h,24h

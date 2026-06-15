@@ -71,6 +71,11 @@
   color: var(--text);
 }
 
+.nav-item:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
 .nav-item.active svg {
   color: var(--green);
 }
@@ -367,6 +372,104 @@
   gap: 10px;
   margin-top: 10px;
   align-items: start;
+}
+
+.opportunity-page-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.48fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.opportunity-page-panel,
+.opportunity-detail-column {
+  min-width: 0;
+}
+
+.opportunity-detail-column {
+  display: grid;
+  gap: 10px;
+}
+
+.npc-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.npc-summary-grid .detail-metric {
+  min-height: 70px;
+  border-bottom: 0;
+}
+
+.npc-summary-grid .detail-metric:nth-child(4n) {
+  border-right: 0;
+}
+
+.opportunity-page-table .arbitrage-row {
+  grid-template-columns: 34px minmax(220px, 1.2fr) repeat(3, minmax(100px, 0.52fr)) minmax(150px, 0.7fr);
+}
+
+.compact-filter-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.compact-filter-presets button,
+.secondary-action {
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  text-transform: capitalize;
+}
+
+.compact-filter-presets button.active-preset {
+  border-color: rgba(98, 238, 89, 0.36);
+  background: rgba(98, 238, 89, 0.1);
+  color: var(--green);
+}
+
+.secondary-action {
+  width: 100%;
+}
+
+.selected-item-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.selected-item-header div {
+  min-width: 0;
+}
+
+.selected-item-header h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 540;
+  overflow-wrap: anywhere;
+}
+
+.selected-item-header span {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.compact-npc-detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.compact-npc-detail-grid .detail-metric:nth-child(2n) {
+  border-right: 0;
 }
 
 .left-column,

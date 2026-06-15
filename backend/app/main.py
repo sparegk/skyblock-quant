@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query
@@ -27,6 +26,7 @@ from app.database import (
     evaluate_signal_backtests,
     get_backtest_results,
     get_backtest_summary,
+    get_database_status,
     get_investment_momentum,
     get_latest_job_runs,
     get_latest_snapshot,
@@ -38,14 +38,7 @@ from app.database import (
     get_top_spreads,
     search_items,
 )
-
-
-DEFAULT_CORS_ORIGINS = "http://127.0.0.1:5173,http://localhost:5173"
-
-
-def get_cors_origins() -> list[str]:
-    origins = os.getenv("SKYBLOCK_QUANT_CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
-    return [origin.strip() for origin in origins.split(",") if origin.strip()]
+from app.settings import get_cors_origins
 
 
 app = FastAPI(title="SkyBlock Quant API")
@@ -60,8 +53,11 @@ app.add_middleware(
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "database": get_database_status(),
+    }
 
 
 @app.get("/api/bazaar/summary")

@@ -1,0 +1,2 @@
+web: uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+worker: python -m app.collectors.scheduler --interval-minutes ${SKYBLOCK_QUANT_COLLECT_INTERVAL_MINUTES:-5} --backtest-horizons ${SKYBLOCK_QUANT_BACKTEST_HORIZONS:-next_snapshot,1h,6h,24h}

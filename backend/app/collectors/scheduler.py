@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from datetime import datetime
@@ -138,7 +139,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--interval-minutes",
         type=int,
-        default=5,
+        default=int(os.getenv("SKYBLOCK_QUANT_COLLECT_INTERVAL_MINUTES", "5")),
         help="How many minutes to wait between Bazaar snapshots.",
     )
     parser.add_argument(
@@ -166,7 +167,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--backtest-horizons",
-        default=",".join(DEFAULT_BACKTEST_HORIZONS),
+        default=os.getenv(
+            "SKYBLOCK_QUANT_BACKTEST_HORIZONS",
+            ",".join(DEFAULT_BACKTEST_HORIZONS),
+        ),
         help="Comma-separated horizons to evaluate after each snapshot.",
     )
     parser.add_argument(
