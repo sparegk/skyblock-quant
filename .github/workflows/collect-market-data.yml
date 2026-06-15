@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 10
 
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PYTHONPATH: backend
       SKYBLOCK_QUANT_DATABASE_URL: ${{ secrets.SKYBLOCK_QUANT_DATABASE_URL }}
       SKYBLOCK_QUANT_RAW_DIR: /tmp/skyblock-quant-raw
