@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.request import urlopen
 
+from app import database
 from app.settings import get_database_config, get_raw_dir
 
 
@@ -28,7 +29,7 @@ def fetch_item_metadata() -> dict[str, Any]:
         return json.loads(response.read().decode("utf-8"))
 
 
-def create_tables(connection: sqlite3.Connection) -> None:
+def create_tables(connection: Any) -> None:
     """Create the item metadata table if it does not already exist."""
     connection.execute(
         """
@@ -61,7 +62,8 @@ def save_item_metadata(data: dict[str, Any], db_path: Path, collected_at: str) -
     if not isinstance(items, list):
         raise ValueError("Hypixel response did not include a valid items list.")
 
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    if not database.is_postgres():
+        db_path.parent.mkdir(parents=True, exist_ok=True)
 
     rows = []
     for item in items:
@@ -82,7 +84,7 @@ def save_item_metadata(data: dict[str, Any], db_path: Path, collected_at: str) -
             )
         )
 
-    with sqlite3.connect(db_path) as connection:
+    with closing(database.get_write_connection(db_path)) as connection:
         create_tables(connection)
         connection.executemany(
             """

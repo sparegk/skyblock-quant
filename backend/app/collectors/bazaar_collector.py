@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.request import urlopen
 
+from app import database
 from app.settings import get_database_config, get_raw_dir
 
 
@@ -28,12 +29,17 @@ def fetch_bazaar_data() -> dict[str, Any]:
         return json.loads(response.read().decode("utf-8"))
 
 
-def create_tables(connection: sqlite3.Connection) -> None:
+def create_tables(connection: Any) -> None:
     """Create the local tables if they do not already exist."""
+    id_type = (
+        "BIGSERIAL PRIMARY KEY"
+        if database.is_postgres()
+        else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    )
     connection.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS bazaar_snapshots (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {id_type},
             collected_at TEXT NOT NULL,
             item_id TEXT NOT NULL,
             buy_price REAL NOT NULL,
@@ -78,9 +84,10 @@ def save_clean_snapshot(
     if not isinstance(products, dict):
         raise ValueError("Hypixel response did not include a valid products object.")
 
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    if not database.is_postgres():
+        db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with sqlite3.connect(db_path) as connection:
+    with closing(database.get_write_connection(db_path)) as connection:
         create_tables(connection)
 
         rows = []

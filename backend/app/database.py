@@ -1,4 +1,4 @@
-"""Database helpers for reading local Bazaar snapshots."""
+"""Database helpers for reading Bazaar snapshots."""
 
 from __future__ import annotations
 
@@ -51,6 +51,41 @@ BACKTEST_HORIZONS = {
 }
 
 
+def is_postgres() -> bool:
+    return DATABASE_CONFIG.is_postgres
+
+
+def sql(statement: str) -> str:
+    """Translate DB-API placeholders for the configured SQL backend."""
+    if is_postgres():
+        return statement.replace("?", "%s")
+
+    return statement
+
+
+class PostgresConnection:
+    """Small compatibility wrapper around psycopg connections."""
+
+    def __init__(self, database_url: str):
+        import psycopg
+        from psycopg.rows import dict_row
+
+        self._connection = psycopg.connect(database_url, row_factory=dict_row)
+
+    def execute(self, statement: str, params: tuple[object, ...] = ()):
+        return self._connection.execute(sql(statement), params)
+
+    def executemany(self, statement: str, params_seq: list[tuple[object, ...]]) -> None:
+        with self._connection.cursor() as cursor:
+            cursor.executemany(sql(statement), params_seq)
+
+    def commit(self) -> None:
+        self._connection.commit()
+
+    def close(self) -> None:
+        self._connection.close()
+
+
 def utc_now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -88,25 +123,68 @@ def get_backtest_horizon_tolerance(horizon: str) -> timedelta | None:
     return max(timedelta(minutes=15), offset / 4)
 
 
-def get_connection() -> sqlite3.Connection:
-    """Open a SQLite connection that returns rows like dictionaries."""
+def get_connection() -> sqlite3.Connection | PostgresConnection:
+    """Open a database connection that returns rows like dictionaries."""
     if DATABASE_CONFIG.is_postgres:
-        raise RuntimeError(
-            "PostgreSQL is configured but this release still uses SQLite SQL. "
-            "Run with SKYBLOCK_QUANT_DB_PATH locally or complete the SQL "
-            "dialect migration before deploying against Postgres."
-        )
+        if DATABASE_CONFIG.database_url is None:
+            raise RuntimeError("PostgreSQL backend selected without a database URL.")
+
+        return PostgresConnection(DATABASE_CONFIG.database_url)
 
     connection = sqlite3.connect(DATABASE_PATH)
     connection.row_factory = sqlite3.Row
     return connection
 
 
+def get_write_connection(sqlite_path: Path | None = None) -> sqlite3.Connection | PostgresConnection:
+    """Open a configured database connection for collectors and migrations."""
+    if DATABASE_CONFIG.is_postgres:
+        return get_connection()
+
+    target_path = sqlite_path or DATABASE_PATH
+    return sqlite3.connect(target_path)
+
+
 def database_exists() -> bool:
     if DATABASE_CONFIG.is_postgres:
-        return False
+        try:
+            with closing(get_connection()) as connection:
+                connection.execute("SELECT 1").fetchone()
+        except Exception:
+            return False
+
+        return True
 
     return DATABASE_PATH.exists()
+
+
+def table_exists(connection: sqlite3.Connection | PostgresConnection, table_name: str) -> bool:
+    if is_postgres():
+        row = connection.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+            AND table_name = ?
+            """,
+            (table_name,),
+        ).fetchone()
+    else:
+        row = connection.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+            AND name = ?
+            """,
+            (table_name,),
+        ).fetchone()
+
+    return row is not None
+
+
+def market_tables_exist(connection: sqlite3.Connection | PostgresConnection) -> bool:
+    return table_exists(connection, "bazaar_snapshots")
 
 
 def get_database_status() -> dict[str, Any]:
@@ -119,12 +197,14 @@ def get_database_status() -> dict[str, Any]:
     }
 
 
-def create_signal_tables(connection: sqlite3.Connection) -> None:
+def create_signal_tables(connection: sqlite3.Connection | PostgresConnection) -> None:
     """Create tables used to persist generated market signals and results."""
+    signal_id_type = "BIGSERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    backtest_id_type = signal_id_type
     connection.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS signals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {signal_id_type},
             created_at TEXT NOT NULL,
             source_snapshot TEXT,
             item_id TEXT NOT NULL,
@@ -153,9 +233,9 @@ def create_signal_tables(connection: sqlite3.Connection) -> None:
         """
     )
     connection.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS backtest_results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {backtest_id_type},
             signal_id INTEGER NOT NULL,
             item_id TEXT NOT NULL,
             signal_type TEXT NOT NULL,
@@ -189,12 +269,13 @@ def create_signal_tables(connection: sqlite3.Connection) -> None:
     connection.commit()
 
 
-def create_job_tables(connection: sqlite3.Connection) -> None:
+def create_job_tables(connection: sqlite3.Connection | PostgresConnection) -> None:
     """Create tables used to record scheduled backend work."""
+    job_id_type = "BIGSERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
     connection.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS job_runs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {job_id_type},
             job_type TEXT NOT NULL,
             started_at TEXT NOT NULL,
             finished_at TEXT,
@@ -232,21 +313,30 @@ def start_job_run(job_type: str) -> int:
 
     with closing(get_connection()) as connection:
         create_job_tables(connection)
-        cursor = connection.execute(
-            """
-            INSERT INTO job_runs (
-                job_type,
-                started_at,
-                status,
-                backtests_evaluated_json
-            )
-            VALUES (?, ?, ?, ?)
-            """,
-            (job_type, utc_now(), "running", "{}"),
+        insert_sql = """
+        INSERT INTO job_runs (
+            job_type,
+            started_at,
+            status,
+            backtests_evaluated_json
         )
+        VALUES (?, ?, ?, ?)
+        """
+        if is_postgres():
+            cursor = connection.execute(
+                f"{insert_sql} RETURNING id",
+                (job_type, utc_now(), "running", "{}"),
+            )
+            job_id = int(cursor.fetchone()["id"])
+        else:
+            cursor = connection.execute(
+                insert_sql,
+                (job_type, utc_now(), "running", "{}"),
+            )
+            job_id = int(cursor.lastrowid)
         connection.commit()
 
-    return int(cursor.lastrowid)
+    return job_id
 
 
 def finish_job_run(
@@ -337,6 +427,14 @@ def get_market_summary() -> dict[str, Any]:
         }
 
     with closing(get_connection()) as connection:
+        if not market_tables_exist(connection):
+            return {
+                "database_ready": False,
+                "latest_snapshot": None,
+                "tracked_products": 0,
+                "total_rows": 0,
+            }
+
         row = connection.execute(
             """
             SELECT
@@ -361,6 +459,9 @@ def get_latest_snapshot(limit: int = 25) -> list[dict[str, Any]]:
         return []
 
     with closing(get_connection()) as connection:
+        if not market_tables_exist(connection):
+            return []
+
         rows = connection.execute(
             """
             SELECT
@@ -393,6 +494,9 @@ def search_items(query: str, limit: int = 25) -> list[dict[str, Any]]:
         return []
 
     with closing(get_connection()) as connection:
+        if not market_tables_exist(connection):
+            return []
+
         rows = connection.execute(
             """
             SELECT
@@ -426,6 +530,9 @@ def get_top_spreads(limit: int = 25) -> list[dict[str, Any]]:
         return []
 
     with closing(get_connection()) as connection:
+        if not market_tables_exist(connection):
+            return []
+
         rows = connection.execute(
             """
             SELECT
@@ -527,16 +634,7 @@ def get_npc_arbitrage(
 
     candidate_limit = max(limit * 5, 100)
     with closing(get_connection()) as connection:
-        table_exists = connection.execute(
-            """
-            SELECT name
-            FROM sqlite_master
-            WHERE type = 'table'
-            AND name = 'items'
-            """
-        ).fetchone()
-
-        if table_exists is None:
+        if not market_tables_exist(connection) or not table_exists(connection, "items"):
             return []
 
         rows = connection.execute(
@@ -740,16 +838,7 @@ def get_npc_arbitrage_detail(
         return None
 
     with closing(get_connection()) as connection:
-        table_exists = connection.execute(
-            """
-            SELECT name
-            FROM sqlite_master
-            WHERE type = 'table'
-            AND name = 'items'
-            """
-        ).fetchone()
-
-        if table_exists is None:
+        if not market_tables_exist(connection) or not table_exists(connection, "items"):
             return None
 
         item = connection.execute(
@@ -1018,6 +1107,9 @@ def get_investment_momentum(
 
     candidate_limit = max(limit * 8, 100)
     with closing(get_connection()) as connection:
+        if not market_tables_exist(connection):
+            return []
+
         rows = connection.execute(
             """
             WITH recent_snapshots AS (
@@ -1207,30 +1299,33 @@ def get_occurrence_investments(limit: int = 10) -> list[dict[str, Any]]:
     market_rows: dict[str, dict[str, Any]] = {}
     if database_exists():
         with closing(get_connection()) as connection:
-            latest_rows = connection.execute(
-                """
-                SELECT
-                    snapshots.item_id,
-                    COALESCE(items.item_name, snapshots.item_id) AS item_name,
-                    items.category,
-                    items.tier,
-                    (snapshots.buy_price + snapshots.sell_price) / 2.0 AS latest_midpoint_price,
-                    snapshots.buy_volume,
-                    snapshots.sell_volume,
-                    snapshots.buy_orders,
-                    snapshots.sell_orders,
-                    snapshots.collected_at
-                FROM bazaar_snapshots AS snapshots
-                LEFT JOIN items ON items.item_id = snapshots.item_id
-                INNER JOIN (
-                    SELECT item_id, MAX(collected_at) AS latest_snapshot
-                    FROM bazaar_snapshots
-                    GROUP BY item_id
-                ) AS latest
-                    ON latest.item_id = snapshots.item_id
-                    AND latest.latest_snapshot = snapshots.collected_at
-                """
-            ).fetchall()
+            if not market_tables_exist(connection):
+                latest_rows = []
+            else:
+                latest_rows = connection.execute(
+                    """
+                    SELECT
+                        snapshots.item_id,
+                        COALESCE(items.item_name, snapshots.item_id) AS item_name,
+                        items.category,
+                        items.tier,
+                        (snapshots.buy_price + snapshots.sell_price) / 2.0 AS latest_midpoint_price,
+                        snapshots.buy_volume,
+                        snapshots.sell_volume,
+                        snapshots.buy_orders,
+                        snapshots.sell_orders,
+                        snapshots.collected_at
+                    FROM bazaar_snapshots AS snapshots
+                    LEFT JOIN items ON items.item_id = snapshots.item_id
+                    INNER JOIN (
+                        SELECT item_id, MAX(collected_at) AS latest_snapshot
+                        FROM bazaar_snapshots
+                        GROUP BY item_id
+                    ) AS latest
+                        ON latest.item_id = snapshots.item_id
+                        AND latest.latest_snapshot = snapshots.collected_at
+                    """
+                ).fetchall()
         market_rows = {row["item_id"]: dict(row) for row in latest_rows}
 
     occurrence_items = []

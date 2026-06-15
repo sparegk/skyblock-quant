@@ -25,7 +25,7 @@ python -m app.collectors.scheduler
 Required backend environment variables:
 
 ```bash
-SKYBLOCK_QUANT_DB_PATH=/var/data/skyblock_quant.db
+SKYBLOCK_QUANT_DATABASE_URL=postgresql://...
 SKYBLOCK_QUANT_RAW_DIR=/var/data/raw
 SKYBLOCK_QUANT_CORS_ORIGINS=https://your-frontend-domain.vercel.app
 SKYBLOCK_QUANT_COLLECT_INTERVAL_MINUTES=5
@@ -38,7 +38,11 @@ SKYBLOCK_QUANT_BACKTEST_HORIZONS=next_snapshot,1h,6h,24h,7d
 
 Local development uses SQLite through `SKYBLOCK_QUANT_DB_PATH`.
 
-`SKYBLOCK_QUANT_DATABASE_URL` is reserved for the Postgres migration path. If it is set to a `postgres://` or `postgresql://` URL today, the backend reports Postgres as configured but does not run SQLite-specific queries against it. The next infrastructure milestone is migrating the SQL layer to Postgres-compatible execution.
+Production should use managed Postgres through `SKYBLOCK_QUANT_DATABASE_URL`.
+When this variable starts with `postgres://` or `postgresql://`, the API,
+collector, signal engine, job logs, and backtests use Postgres. Keep
+`SKYBLOCK_QUANT_DB_PATH` unset in production unless you intentionally want the
+SQLite fallback.
 
 ## Frontend
 

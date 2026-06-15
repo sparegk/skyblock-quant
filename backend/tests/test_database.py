@@ -6,8 +6,10 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 from app import database
+from app.settings import DatabaseConfig
 
 
 class NpcArbitrageTests(unittest.TestCase):
@@ -710,6 +712,86 @@ class NpcArbitrageTests(unittest.TestCase):
                 item_rows,
             )
             connection.commit()
+
+
+class DatabaseDialectTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.original_database_config = database.DATABASE_CONFIG
+
+    def tearDown(self) -> None:
+        database.DATABASE_CONFIG = self.original_database_config
+
+    def test_sql_keeps_sqlite_placeholders_by_default(self) -> None:
+        self.assertEqual("SELECT ? AS value", database.sql("SELECT ? AS value"))
+
+    def test_sql_translates_placeholders_for_postgres(self) -> None:
+        database.DATABASE_CONFIG = DatabaseConfig(
+            backend="postgres",
+            sqlite_path=Path("unused.db"),
+            database_url="postgresql://example",
+        )
+
+        self.assertEqual("SELECT %s AS value", database.sql("SELECT ? AS value"))
+
+    def test_postgres_signal_tables_use_serial_primary_keys(self) -> None:
+        database.DATABASE_CONFIG = DatabaseConfig(
+            backend="postgres",
+            sqlite_path=Path("unused.db"),
+            database_url="postgresql://example",
+        )
+        connection = CapturingConnection()
+
+        database.create_signal_tables(connection)
+
+        ddl = "\n".join(connection.statements)
+        self.assertIn("id BIGSERIAL PRIMARY KEY", ddl)
+        self.assertNotIn("AUTOINCREMENT", ddl)
+
+    def test_postgres_job_insert_returns_generated_id(self) -> None:
+        database.DATABASE_CONFIG = DatabaseConfig(
+            backend="postgres",
+            sqlite_path=Path("unused.db"),
+            database_url="postgresql://example",
+        )
+        connection = CapturingConnection(returning_id=42)
+
+        with patch.object(database, "database_exists", return_value=True):
+            with patch.object(database, "get_connection", return_value=connection):
+                self.assertEqual(42, database.start_job_run("market_cycle"))
+
+        self.assertTrue(
+            any("RETURNING id" in statement for statement in connection.statements)
+        )
+
+
+class CapturingCursor:
+    def __init__(self, returning_id: int | None = None):
+        self.returning_id = returning_id
+        self.lastrowid = returning_id or 1
+
+    def fetchone(self) -> dict[str, int] | None:
+        if self.returning_id is None:
+            return None
+
+        return {"id": self.returning_id}
+
+
+class CapturingConnection:
+    def __init__(self, returning_id: int | None = None):
+        self.returning_id = returning_id
+        self.statements: list[str] = []
+        self.committed = False
+        self.closed = False
+
+    def execute(self, statement: str, params: tuple[object, ...] = ()) -> CapturingCursor:
+        self.statements.append(statement)
+        return CapturingCursor(self.returning_id if "RETURNING id" in statement else None)
+
+    def commit(self) -> None:
+        self.committed = True
+
+    def close(self) -> None:
+        self.closed = True
 
 
 if __name__ == "__main__":
