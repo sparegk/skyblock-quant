@@ -481,14 +481,6 @@ function getProjectionHint(item: InvestmentMomentumItem) {
   return `${formatCompact(item.projected_target_price)} target`
 }
 
-function getProjectionQualityHint(item: InvestmentMomentumItem) {
-  const quality = Math.round(item.market_quality_score * 100)
-  const spread = formatPercent(item.spread_percent)
-  const risk = Math.round(item.risk_penalty_score)
-
-  return `quality ${quality} - spread ${spread} - risk ${risk}`
-}
-
 function getNpcQualityLabel(item: NpcArbitrageItem) {
   return item.risk_label
 }
@@ -1465,7 +1457,7 @@ function App() {
                       <DetailMetric
                         label="confidence"
                         value={<span className="score-badge">{Math.round(featuredInvestment.projection_confidence * 100)}</span>}
-                        hint={getProjectionQualityHint(featuredInvestment)}
+                        hint="projection confidence"
                         positive
                       />
                     </div>
@@ -1508,7 +1500,6 @@ function App() {
                         </span>
                         <span className="table-score">
                           <span>{Math.round(item.projection_confidence * 100)}%</span>
-                          <small>{Math.round(item.market_quality_score * 100)} quality</small>
                         </span>
                       </div>
                     )) : (
@@ -1992,7 +1983,7 @@ function App() {
                           {result.signal_type} - {result.horizon}
                         </small>
                       </div>
-                      <strong className={result.return_percent >= 0 ? 'positive' : ''}>
+                      <strong className={result.return_percent >= 0 ? 'return-positive' : 'return-negative'}>
                         {formatPercent(result.return_percent)}
                       </strong>
                     </div>
