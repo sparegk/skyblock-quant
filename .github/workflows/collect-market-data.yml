@@ -11,8 +11,6 @@ on:
         options:
           - "false"
           - "true"
-  schedule:
-    - cron: "*/15 * * * *"
 
 concurrency:
   group: collect-market-data

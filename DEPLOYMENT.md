@@ -28,8 +28,8 @@ GitHub repository secrets as:
 SKYBLOCK_QUANT_DATABASE_URL=postgresql://...
 ```
 
-The scheduled workflow in `.github/workflows/collect-market-data.yml` runs every
-15 minutes and can also be started manually from the GitHub Actions tab. It runs:
+The workflow in `.github/workflows/collect-market-data.yml` can be started
+manually from the GitHub Actions tab. It runs:
 
 ```bash
 python -m app.collectors.scheduler --max-runs 1
@@ -37,6 +37,9 @@ python -m app.collectors.scheduler --max-runs 1
 
 For the first run, use the manual workflow input `refresh_metadata=true` so the
 `items` table is populated before Bazaar snapshots are analyzed.
+
+If you are staying local-only, do not add the GitHub secret and do not run this
+workflow. The local backend will use SQLite through `SKYBLOCK_QUANT_DB_PATH`.
 
 ### Frontend
 
