@@ -26,7 +26,7 @@ jobs:
     env:
       PYTHONPATH: backend
       SKYBLOCK_QUANT_DATABASE_URL: ${{ secrets.SKYBLOCK_QUANT_DATABASE_URL }}
-      SKYBLOCK_QUANT_RAW_DIR: ${{ runner.temp }}/skyblock-quant-raw
+      SKYBLOCK_QUANT_RAW_DIR: /tmp/skyblock-quant-raw
       SKYBLOCK_QUANT_BACKTEST_HORIZONS: next_snapshot,1h,6h,24h,7d
 
     steps:
