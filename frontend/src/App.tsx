@@ -418,12 +418,7 @@ function scoreItem(item: BazaarItem) {
 }
 
 function scoreInvestmentItem(item: InvestmentMomentumItem) {
-  const gainScore = Math.min(item.projected_rise_percent * 220, 45)
-  const confidenceScore = Math.min(item.projection_confidence * 26, 26)
-  const profitScore = Math.min(item.profit_efficiency_score * 0.2, 20)
-  const steadyScore = Math.min(item.rising_steps * 7, 18)
-  const jumpPenalty = item.max_single_jump >= 0.25 ? 12 : 0
-  return Math.max(1, Math.round(gainScore + confidenceScore + profitScore + steadyScore - jumpPenalty))
+  return Math.max(1, Math.min(99, Math.round(item.investment_score)))
 }
 
 function getNpcQualityLabel(item: NpcArbitrageItem) {
@@ -1376,10 +1371,10 @@ function App() {
                         positive
                       />
                       <DetailMetric
-                        label="slot profit"
-                        value={formatCompact(featuredInvestment.projected_profit_per_slot)}
-                        hint={`${featuredInvestment.estimated_stack_size} stack - ${formatCompact(featuredInvestment.storage_slot_value)} slot`}
-                        positive={featuredInvestment.projected_profit_per_slot > 0}
+                        label="avg volume"
+                        value={formatCompact(featuredInvestment.average_volume)}
+                        hint={`${formatNumber(featuredInvestment.average_orders)} avg orders`}
+                        positive={featuredInvestment.average_volume >= 50_000}
                       />
                       <DetailMetric
                         label="confidence"
@@ -1402,7 +1397,6 @@ function App() {
                       <span>price</span>
                       <span>recent move</span>
                       <span>potential rise</span>
-                      <span>slot profit</span>
                       <span>confidence</span>
                     </div>
                     {filteredInvestments.length > 0 ? filteredInvestments.map((item, index) => (
@@ -1420,12 +1414,6 @@ function App() {
                         <span className="projection-cell">
                           <b>{formatPercent(item.projected_rise_percent)}</b>
                           <small>{formatCompact(item.projected_target_price)} target</small>
-                        </span>
-                        <span className="projection-cell">
-                          <b>{formatCompact(item.projected_profit_per_slot)}</b>
-                          <small>
-                            {item.estimated_stack_size} stack - {formatCompact(item.storage_slot_value)} slot
-                          </small>
                         </span>
                         <span className="table-score">
                           <span>{scoreInvestmentItem(item)}</span>
@@ -1648,10 +1636,10 @@ function App() {
                       positive={featuredOccurrenceInvestment.confidence >= 0.6}
                     />
                     <DetailMetric
-                      label="slot value"
-                      value={formatCompact(featuredOccurrenceInvestment.storage_slot_value)}
-                      hint={`${featuredOccurrenceInvestment.estimated_stack_size} stack`}
-                      positive={featuredOccurrenceInvestment.storage_slot_value >= 5_000}
+                      label="liquidity"
+                      value={formatCompact(featuredOccurrenceInvestment.sell_volume)}
+                      hint={`${formatNumber(featuredOccurrenceInvestment.sell_orders)} sell orders`}
+                      positive={featuredOccurrenceInvestment.sell_volume >= 10_000}
                     />
                   </div>
                   <p className="panel-note">{featuredOccurrenceInvestment.thesis}</p>
@@ -1671,7 +1659,7 @@ function App() {
             <article className="panel compact-panel">
               <div className="panel-heading">
                 <h2>investment fit</h2>
-                <span>slot profit</span>
+                <span>balanced score</span>
               </div>
               {investmentFitItems.length > 0 ? (
                 investmentFitItems.map((item, index) => (
@@ -1680,8 +1668,8 @@ function App() {
                     <div>
                       <b>{item.item_name}</b>
                       <small>
-                        {formatCompact(item.projected_profit_per_slot)} slot profit -{' '}
-                        {formatPercent(item.projected_rise_percent)} projected
+                        {formatPercent(item.projected_rise_percent)} projected -{' '}
+                        {Math.round(item.projection_confidence * 100)}% confidence
                       </small>
                     </div>
                     <MiniLineChart

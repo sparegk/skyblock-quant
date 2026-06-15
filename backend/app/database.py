@@ -983,11 +983,18 @@ def add_investment_projection_fields(item: dict[str, Any]) -> dict[str, Any]:
             - min(item["max_single_jump"], 0.5) * 0.4,
         ),
     )
+    liquidity_score = min(
+        100.0,
+        min(item["average_volume"] / 200_000, 1) * 70
+        + min(item["average_orders"] / 300, 1) * 30,
+    )
     item["investment_score"] = (
-        item["projected_profit_per_slot"]
-        * item["projection_confidence"]
-        * (0.5 + item["storage_efficiency_score"] / 200)
-        * (0.5 + item["profit_efficiency_score"] / 200)
+        projected_rise_percent * 100 * 0.3
+        + item["projection_confidence"] * 100 * 0.25
+        + item["profit_efficiency_score"] * 0.2
+        + item["storage_efficiency_score"] * 0.1
+        + liquidity_score * 0.1
+        + trend_consistency * 100 * 0.05
     )
     return item
 

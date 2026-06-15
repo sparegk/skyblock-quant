@@ -702,7 +702,7 @@
 .opportunity-row,
 .arbitrage-row {
   display: grid;
-  grid-template-columns: 32px minmax(178px, 1.18fr) repeat(4, minmax(70px, 0.5fr)) minmax(62px, 0.4fr);
+  grid-template-columns: 32px minmax(178px, 1.18fr) repeat(3, minmax(76px, 0.5fr)) minmax(62px, 0.4fr);
   gap: 10px;
   align-items: center;
   min-height: 42px;
