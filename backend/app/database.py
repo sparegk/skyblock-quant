@@ -1509,6 +1509,7 @@ def evaluate_signal_backtests(
     horizon: str = "next_snapshot",
     success_threshold: float = 0.0,
     limit: int = 100,
+    refresh_existing: bool = False,
 ) -> int:
     """Evaluate logged signals against a future Bazaar snapshot."""
     if horizon not in BACKTEST_HORIZONS:
@@ -1522,8 +1523,23 @@ def evaluate_signal_backtests(
 
     with closing(get_connection()) as connection:
         create_signal_tables(connection)
-        signals = connection.execute(
+        existing_filter = (
+            ""
+            if refresh_existing
+            else """
+            AND NOT EXISTS (
+                SELECT 1
+                FROM backtest_results
+                WHERE backtest_results.signal_id = signals.id
+                AND backtest_results.horizon = ?
+            )
             """
+        )
+        params: tuple[object, ...] = (
+            (horizon, limit) if not refresh_existing else (limit,)
+        )
+        signals = connection.execute(
+            f"""
             SELECT
                 id,
                 item_id,
@@ -1533,16 +1549,11 @@ def evaluate_signal_backtests(
             FROM signals
             WHERE item_id != '__MARKET__'
             AND source_snapshot IS NOT NULL
-            AND NOT EXISTS (
-                SELECT 1
-                FROM backtest_results
-                WHERE backtest_results.signal_id = signals.id
-                AND backtest_results.horizon = ?
-            )
+            {existing_filter}
             ORDER BY created_at ASC
             LIMIT ?
             """,
-            (horizon, limit),
+            params,
         ).fetchall()
 
         results = []
@@ -1677,7 +1688,19 @@ def evaluate_signal_backtests(
                     notes
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(signal_id, horizon) DO NOTHING
+                ON CONFLICT(signal_id, horizon) DO UPDATE SET
+                    item_id = excluded.item_id,
+                    signal_type = excluded.signal_type,
+                    entry_time = excluded.entry_time,
+                    exit_time = excluded.exit_time,
+                    entry_price = excluded.entry_price,
+                    exit_price = excluded.exit_price,
+                    return_percent = excluded.return_percent,
+                    max_drawdown_percent = excluded.max_drawdown_percent,
+                    max_gain_percent = excluded.max_gain_percent,
+                    was_successful = excluded.was_successful,
+                    evaluated_at = excluded.evaluated_at,
+                    notes = excluded.notes
                 """,
                 results,
             )
@@ -1692,6 +1715,10 @@ def get_backtest_summary() -> dict[str, Any]:
         "total_results": 0,
         "successful_results": 0,
         "win_rate": 0.0,
+        "total_signals": 0,
+        "possible_evaluations": 0,
+        "coverage_rate": 0.0,
+        "pending_evaluations": 0,
         "average_return": 0.0,
         "median_return": 0.0,
         "best_return": 0.0,
@@ -1704,6 +1731,8 @@ def get_backtest_summary() -> dict[str, Any]:
         "average_projected_return": 0.0,
         "average_realized_projection_return": 0.0,
         "latest_evaluated_at": None,
+        "by_horizon": [],
+        "by_signal_type": [],
     }
 
     if not database_exists():
@@ -1725,9 +1754,49 @@ def get_backtest_summary() -> dict[str, Any]:
             ORDER BY return_percent ASC
             """
         ).fetchall()
+        total_signals = connection.execute(
+            """
+            SELECT COUNT(*) AS total_signals
+            FROM signals
+            WHERE item_id != '__MARKET__'
+            AND source_snapshot IS NOT NULL
+            """
+        ).fetchone()["total_signals"]
+        horizon_rows = connection.execute(
+            """
+            SELECT
+                horizon,
+                COUNT(*) AS total_results,
+                SUM(was_successful) AS successful_results,
+                AVG(return_percent) AS average_return,
+                AVG(max_drawdown_percent) AS average_drawdown
+            FROM backtest_results
+            GROUP BY horizon
+            ORDER BY horizon
+            """
+        ).fetchall()
+        signal_type_rows = connection.execute(
+            """
+            SELECT
+                signal_type,
+                COUNT(*) AS total_results,
+                SUM(was_successful) AS successful_results,
+                AVG(return_percent) AS average_return,
+                AVG(max_drawdown_percent) AS average_drawdown
+            FROM backtest_results
+            GROUP BY signal_type
+            ORDER BY total_results DESC, signal_type ASC
+            """
+        ).fetchall()
 
     if not rows:
-        return empty_summary
+        possible_evaluations = total_signals * len(BACKTEST_HORIZONS)
+        return {
+            **empty_summary,
+            "total_signals": total_signals,
+            "possible_evaluations": possible_evaluations,
+            "pending_evaluations": possible_evaluations,
+        }
 
     returns = [row["return_percent"] for row in rows]
     drawdowns = [row["max_drawdown_percent"] for row in rows]
@@ -1756,11 +1825,27 @@ def get_backtest_summary() -> dict[str, Any]:
         for row in projection_rows
         if row["return_percent"] >= row["expected_return"]
     ]
+    possible_evaluations = total_signals * len(BACKTEST_HORIZONS)
+
+    def summarize_group(row: Any) -> dict[str, Any]:
+        total = row["total_results"]
+        successful = row["successful_results"] or 0
+        return {
+            **dict(row),
+            "successful_results": successful,
+            "win_rate": successful / total if total else 0.0,
+        }
 
     return {
         "total_results": total_results,
         "successful_results": successful_results,
         "win_rate": successful_results / total_results,
+        "total_signals": total_signals,
+        "possible_evaluations": possible_evaluations,
+        "coverage_rate": (
+            total_results / possible_evaluations if possible_evaluations else 0.0
+        ),
+        "pending_evaluations": max(possible_evaluations - total_results, 0),
         "average_return": sum(returns) / total_results,
         "median_return": median_return,
         "best_return": max(returns),
@@ -1789,6 +1874,8 @@ def get_backtest_summary() -> dict[str, Any]:
             else 0.0
         ),
         "latest_evaluated_at": latest_evaluated_at,
+        "by_horizon": [summarize_group(row) for row in horizon_rows],
+        "by_signal_type": [summarize_group(row) for row in signal_type_rows],
     }
 
 

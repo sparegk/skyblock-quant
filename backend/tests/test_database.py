@@ -428,6 +428,16 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertGreater(summary["average_return"], 0)
         self.assertGreaterEqual(summary["best_return"], summary["worst_return"])
         self.assertEqual(2, summary["projection_results"])
+        self.assertEqual(2, summary["total_signals"])
+        self.assertEqual(2 * len(database.BACKTEST_HORIZONS), summary["possible_evaluations"])
+        self.assertEqual(2, summary["total_results"])
+        self.assertGreater(summary["coverage_rate"], 0)
+        self.assertEqual(
+            summary["possible_evaluations"] - summary["total_results"],
+            summary["pending_evaluations"],
+        )
+        self.assertTrue(summary["by_horizon"])
+        self.assertTrue(summary["by_signal_type"])
         self.assertGreaterEqual(summary["projection_hit_rate"], 0)
         self.assertLessEqual(summary["projection_hit_rate"], 1)
         self.assertIn("average_projection_error", summary)

@@ -240,6 +240,10 @@ type BacktestSummary = {
   total_results: number
   successful_results: number
   win_rate: number
+  total_signals: number
+  possible_evaluations: number
+  coverage_rate: number
+  pending_evaluations: number
   average_return: number
   median_return: number
   best_return: number
@@ -252,6 +256,18 @@ type BacktestSummary = {
   average_projected_return: number
   average_realized_projection_return: number
   latest_evaluated_at: string | null
+  by_horizon: BacktestBreakdown[]
+  by_signal_type: BacktestBreakdown[]
+}
+
+type BacktestBreakdown = {
+  horizon?: string
+  signal_type?: string
+  total_results: number
+  successful_results: number
+  win_rate: number
+  average_return: number
+  average_drawdown: number
 }
 
 type BacktestResult = {
@@ -1687,7 +1703,7 @@ function App() {
 
             <article className="panel compact-panel">
               <div className="panel-heading">
-                <h2>best watch picks</h2>
+                <h2>top 3 current picks</h2>
                 <span>profit + confidence</span>
               </div>
               {investmentFitItems.length > 0 ? (
@@ -1832,6 +1848,12 @@ function App() {
                     positive={backtestSummary.win_rate >= 0.5}
                   />
                   <DetailMetric
+                    label="coverage"
+                    value={`${Math.round(backtestSummary.coverage_rate * 100)}%`}
+                    hint={`${backtestSummary.total_results} / ${backtestSummary.possible_evaluations} checks`}
+                    positive={backtestSummary.coverage_rate >= 0.5}
+                  />
+                  <DetailMetric
                     label="avg return"
                     value={formatPercent(backtestSummary.average_return)}
                     hint="evaluated signals"
@@ -1871,11 +1893,42 @@ function App() {
                     positive={backtestSummary.average_realized_projection_return >= 0}
                   />
                   <DetailMetric
-                    label="avg error"
-                    value={formatPercent(backtestSummary.average_absolute_projection_error)}
-                    hint="absolute forecast miss"
-                    positive={backtestSummary.average_absolute_projection_error <= 0.05}
+                    label="pending"
+                    value={formatCompact(backtestSummary.pending_evaluations)}
+                    hint={`${backtestSummary.total_signals} tracked signals`}
+                    positive={backtestSummary.pending_evaluations === 0}
                   />
+                </div>
+
+                <div className="backtest-breakdown-grid">
+                  <div>
+                    <h3>by horizon</h3>
+                    {backtestSummary.by_horizon.length > 0 ? (
+                      backtestSummary.by_horizon.map((row) => (
+                        <div className="breakdown-row" key={row.horizon}>
+                          <span>{row.horizon}</span>
+                          <b>{Math.round(row.win_rate * 100)}%</b>
+                          <small>{row.total_results} checks</small>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="empty-state">waiting for horizon results.</p>
+                    )}
+                  </div>
+                  <div>
+                    <h3>by signal</h3>
+                    {backtestSummary.by_signal_type.length > 0 ? (
+                      backtestSummary.by_signal_type.map((row) => (
+                        <div className="breakdown-row" key={row.signal_type}>
+                          <span>{row.signal_type}</span>
+                          <b>{Math.round(row.win_rate * 100)}%</b>
+                          <small>{formatPercent(row.average_return)} avg</small>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="empty-state">waiting for signal results.</p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="backtest-result-list">

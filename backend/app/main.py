@@ -57,7 +57,11 @@ def refresh_backtests_on_startup(limit: int = 1000) -> dict[str, int]:
     """Evaluate all supported backtest horizons when the API starts."""
     evaluated: dict[str, int] = {}
     for horizon in BACKTEST_HORIZONS:
-        evaluated[horizon] = evaluate_signal_backtests(limit=limit, horizon=horizon)
+        evaluated[horizon] = evaluate_signal_backtests(
+            limit=limit,
+            horizon=horizon,
+            refresh_existing=True,
+        )
 
     return evaluated
 
@@ -201,13 +205,43 @@ def latest_signals(
 def evaluate_backtests(
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     horizon: Annotated[str, Query(max_length=20)] = "next_snapshot",
+    refresh_existing: bool = True,
 ) -> dict[str, object]:
     try:
-        evaluated = evaluate_signal_backtests(limit=limit, horizon=horizon)
+        evaluated = evaluate_signal_backtests(
+            limit=limit,
+            horizon=horizon,
+            refresh_existing=refresh_existing,
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
-    return {"evaluated": evaluated, "horizon": horizon}
+    return {
+        "evaluated": evaluated,
+        "horizon": horizon,
+        "refreshed_existing": refresh_existing,
+    }
+
+
+@app.post("/api/backtests/evaluate-all")
+def evaluate_all_backtests(
+    limit: Annotated[int, Query(ge=1, le=1000)] = 1000,
+    refresh_existing: bool = True,
+) -> dict[str, object]:
+    evaluated: dict[str, int] = {}
+
+    for horizon in BACKTEST_HORIZONS:
+        evaluated[horizon] = evaluate_signal_backtests(
+            limit=limit,
+            horizon=horizon,
+            refresh_existing=refresh_existing,
+        )
+
+    return {
+        "evaluated": evaluated,
+        "total_evaluated": sum(evaluated.values()),
+        "refreshed_existing": refresh_existing,
+    }
 
 
 @app.get("/api/backtests/summary")

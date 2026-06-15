@@ -105,8 +105,15 @@ class ApiRouteTests(unittest.TestCase):
         with patch("app.main.evaluate_signal_backtests", return_value=3) as evaluate:
             response = main.evaluate_backtests(limit=12, horizon="1h")
 
-        self.assertEqual({"evaluated": 3, "horizon": "1h"}, response)
-        evaluate.assert_called_once_with(limit=12, horizon="1h")
+        self.assertEqual(
+            {"evaluated": 3, "horizon": "1h", "refreshed_existing": True},
+            response,
+        )
+        evaluate.assert_called_once_with(
+            limit=12,
+            horizon="1h",
+            refresh_existing=True,
+        )
 
     def test_evaluate_backtests_raises_400_for_bad_horizon(self) -> None:
         with patch(
@@ -117,6 +124,28 @@ class ApiRouteTests(unittest.TestCase):
                 main.evaluate_backtests(limit=12, horizon="3h")
 
         self.assertEqual(400, error.exception.status_code)
+
+    def test_evaluate_all_backtests_refreshes_every_horizon(self) -> None:
+        with patch("app.main.evaluate_signal_backtests", return_value=2) as evaluate:
+            response = main.evaluate_all_backtests(limit=12)
+
+        self.assertEqual(
+            {
+                "evaluated": {
+                    horizon: 2
+                    for horizon in main.BACKTEST_HORIZONS
+                },
+                "total_evaluated": 2 * len(main.BACKTEST_HORIZONS),
+                "refreshed_existing": True,
+            },
+            response,
+        )
+        self.assertEqual(len(main.BACKTEST_HORIZONS), evaluate.call_count)
+        evaluate.assert_any_call(
+            limit=12,
+            horizon="next_snapshot",
+            refresh_existing=True,
+        )
 
     def test_backtest_summary_returns_metrics(self) -> None:
         expected_summary = {"total_results": 4, "win_rate": 0.75}
