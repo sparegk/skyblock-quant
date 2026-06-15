@@ -161,7 +161,7 @@ Useful scheduler options:
 
 ```bash
 py backend/app/collectors/scheduler.py --interval-minutes 5 --refresh-metadata-first
-py backend/app/collectors/scheduler.py --interval-minutes 5 --backtest-horizons next_snapshot,1h,6h,24h
+py backend/app/collectors/scheduler.py --interval-minutes 5 --backtest-horizons next_snapshot,1h,6h,24h,7d
 py backend/app/collectors/scheduler.py --interval-minutes 5 --skip-analysis
 ```
 

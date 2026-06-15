@@ -29,7 +29,7 @@ SKYBLOCK_QUANT_DB_PATH=/var/data/skyblock_quant.db
 SKYBLOCK_QUANT_RAW_DIR=/var/data/raw
 SKYBLOCK_QUANT_CORS_ORIGINS=https://your-frontend-domain.vercel.app
 SKYBLOCK_QUANT_COLLECT_INTERVAL_MINUTES=5
-SKYBLOCK_QUANT_BACKTEST_HORIZONS=next_snapshot,1h,6h,24h
+SKYBLOCK_QUANT_BACKTEST_HORIZONS=next_snapshot,1h,6h,24h,7d
 ```
 
 `/health` returns API status and database readiness. Use it as the platform health check.

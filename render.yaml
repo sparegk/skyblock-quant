@@ -26,4 +26,4 @@ services:
       - key: SKYBLOCK_QUANT_COLLECT_INTERVAL_MINUTES
         value: 5
       - key: SKYBLOCK_QUANT_BACKTEST_HORIZONS
-        value: next_snapshot,1h,6h,24h
+        value: next_snapshot,1h,6h,24h,7d

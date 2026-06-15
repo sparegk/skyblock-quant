@@ -66,6 +66,8 @@ const NPC_FILTER_PRESETS: Array<{
   },
 ]
 
+const MIN_FEATURED_PROJECTED_RISE = 0.1
+
 type MarketSummary = {
   database_ready: boolean
   latest_snapshot: string | null
@@ -421,6 +423,10 @@ function scoreInvestmentItem(item: InvestmentMomentumItem) {
   return Math.max(1, Math.min(99, Math.round(item.investment_score)))
 }
 
+function scoreInvestmentRank(item: InvestmentMomentumItem) {
+  return item.projected_profit_per_unit * (0.55 + item.projection_confidence * 0.45)
+}
+
 function getNpcQualityLabel(item: NpcArbitrageItem) {
   return item.risk_label
 }
@@ -686,11 +692,11 @@ function App() {
           await Promise.all([
           fetch(`${API_BASE_URL}/api/bazaar/summary`),
           fetch(`${API_BASE_URL}/api/bazaar/latest?limit=40`),
-          fetch(`${API_BASE_URL}/api/investments/momentum?limit=10`),
+          fetch(`${API_BASE_URL}/api/investments/momentum?limit=25`),
           fetch(`${API_BASE_URL}/api/investments/occurrences?limit=5`),
           fetch(`${API_BASE_URL}/api/signals/latest?limit=8`),
           fetch(`${API_BASE_URL}/api/backtests/summary`),
-          fetch(`${API_BASE_URL}/api/backtests/results?limit=5`),
+          fetch(`${API_BASE_URL}/api/backtests/results?limit=25`),
           fetch(`${API_BASE_URL}/api/jobs/latest?limit=5`),
         ])
 
@@ -839,23 +845,41 @@ function App() {
     [items],
   )
 
-  const featuredInvestment = investmentItems[0]
+  const rankedInvestments = useMemo(
+    () =>
+      investmentItems
+        .filter((item) => item.projected_rise_percent >= MIN_FEATURED_PROJECTED_RISE)
+        .sort((left, right) => {
+          const rightScore = scoreInvestmentRank(right)
+          const leftScore = scoreInvestmentRank(left)
+
+          if (rightScore !== leftScore) {
+            return rightScore - leftScore
+          }
+
+          return right.projected_profit_per_unit - left.projected_profit_per_unit
+        }),
+    [investmentItems],
+  )
+
+  const featuredInvestment = rankedInvestments[0]
   const featuredOccurrenceInvestment = occurrenceItems[0]
 
   const filteredInvestments = useMemo(() => {
     const cleanQuery = query.trim().toLowerCase()
-    const watchItems = featuredInvestment
-      ? investmentItems.filter((item) => item.item_id !== featuredInvestment.item_id)
-      : investmentItems
 
     if (!cleanQuery) {
-      return watchItems.slice(0, 10)
+      return rankedInvestments.slice(0, 10)
     }
 
-    return watchItems
-      .filter((item) => item.item_name.toLowerCase().includes(cleanQuery))
+    return rankedInvestments
+      .filter(
+        (item) =>
+          item.item_name.toLowerCase().includes(cleanQuery) ||
+          item.item_id.toLowerCase().includes(cleanQuery),
+      )
       .slice(0, 10)
-  }, [featuredInvestment, query, investmentItems])
+  }, [query, rankedInvestments])
 
   const marketScore = featuredInvestment ? Math.min(scoreInvestmentItem(featuredInvestment), 99) : 0
   const bestNpcProfit = npcArbitrageItems[0]?.profit_per_item ?? 0
@@ -863,10 +887,10 @@ function App() {
     npcArbitrageItems.find((item) => item.item_id === selectedNpcItemId) ?? null
   const snapshotAgeMinutes = getSnapshotAgeMinutes(summary?.latest_snapshot ?? null)
   const isSnapshotStale = snapshotAgeMinutes !== null && snapshotAgeMinutes > 20
-  const bestInvestmentGain = featuredInvestment?.gain_percent ?? 0
+  const bestInvestmentGain = featuredInvestment?.projected_rise_percent ?? 0
   const forecastChartValues =
     investmentItems.length > 0
-      ? investmentItems.map((item) => item.momentum_score)
+      ? rankedInvestments.map((item) => item.momentum_score)
       : rankedItems.slice(0, 8).map((item) => scoreItem(item))
   const selectedNpcProfitChart =
     selectedNpcDetail?.history
@@ -875,7 +899,7 @@ function App() {
       .map((row) => row.profit_per_item) ?? []
   const backtestWinRate = backtestSummary ? Math.round(backtestSummary.win_rate * 100) : 0
   const latestJob = jobRuns[0]
-  const investmentFitItems = investmentItems.slice(1, 4)
+  const investmentFitItems = rankedInvestments.slice(1, 4)
 
   return (
     <div className="dashboard">
@@ -1307,11 +1331,11 @@ function App() {
             </div>
             <div>
               <span>rising items</span>
-              <strong>{investmentItems.length}</strong>
+              <strong>{rankedInvestments.length}</strong>
               <p>
                 {bestInvestmentGain > 0
-                  ? `${formatPercent(bestInvestmentGain)} strongest move`
-                  : 'collecting price history'}
+                  ? `${formatPercent(bestInvestmentGain)} strongest projection`
+                  : 'waiting for 10%+ setups'}
               </p>
             </div>
           </article>
@@ -1371,15 +1395,15 @@ function App() {
                         positive
                       />
                       <DetailMetric
-                        label="avg volume"
-                        value={formatCompact(featuredInvestment.average_volume)}
-                        hint={`${formatNumber(featuredInvestment.average_orders)} avg orders`}
-                        positive={featuredInvestment.average_volume >= 50_000}
+                        label="profit/item"
+                        value={formatCompact(featuredInvestment.projected_profit_per_unit)}
+                        hint="price x potential rise"
+                        positive={featuredInvestment.projected_profit_per_unit > 0}
                       />
                       <DetailMetric
                         label="confidence"
-                        value={<span className="score-badge">{scoreInvestmentItem(featuredInvestment)}</span>}
-                        hint="momentum score"
+                        value={<span className="score-badge">{Math.round(featuredInvestment.projection_confidence * 100)}</span>}
+                        hint="projection quality"
                         positive
                       />
                     </div>
@@ -1387,7 +1411,7 @@ function App() {
 
                   <div className="table-section-heading">
                     <h3>items to watch</h3>
-                    <span>next 10</span>
+                    <span>top 10 - 10%+ projected rise</span>
                   </div>
 
                   <div className="opportunity-table">
@@ -1397,6 +1421,7 @@ function App() {
                       <span>price</span>
                       <span>recent move</span>
                       <span>potential rise</span>
+                      <span>profit/item</span>
                       <span>confidence</span>
                     </div>
                     {filteredInvestments.length > 0 ? filteredInvestments.map((item, index) => (
@@ -1415,8 +1440,12 @@ function App() {
                           <b>{formatPercent(item.projected_rise_percent)}</b>
                           <small>{formatCompact(item.projected_target_price)} target</small>
                         </span>
+                        <span className="projection-cell">
+                          <b>{formatCompact(item.projected_profit_per_unit)}</b>
+                          <small>price x rise</small>
+                        </span>
                         <span className="table-score">
-                          <span>{scoreInvestmentItem(item)}</span>
+                          <span>{Math.round(item.projection_confidence * 100)}%</span>
                         </span>
                       </div>
                     )) : (
@@ -1588,11 +1617,11 @@ function App() {
                 </div>
                 <div className="forecast-copy">
                   <strong>
-                    {investmentItems[0] ? `${formatPercent(investmentItems[0].gain_percent)} top climb` : 'building signal'}
+                    {featuredInvestment ? `${formatPercent(featuredInvestment.gain_percent)} top climb` : 'building signal'}
                   </strong>
                   <span>
-                    {investmentItems[0]
-                      ? `${investmentItems[0].item_name} leads recent bazaar momentum.`
+                    {featuredInvestment
+                      ? `${featuredInvestment.item_name} leads recent bazaar momentum.`
                       : 'collect more snapshots for stronger price trends.'}
                   </span>
                 </div>
@@ -1658,8 +1687,8 @@ function App() {
 
             <article className="panel compact-panel">
               <div className="panel-heading">
-                <h2>investment fit</h2>
-                <span>balanced score</span>
+                <h2>best watch picks</h2>
+                <span>profit + confidence</span>
               </div>
               {investmentFitItems.length > 0 ? (
                 investmentFitItems.map((item, index) => (
@@ -1668,7 +1697,7 @@ function App() {
                     <div>
                       <b>{item.item_name}</b>
                       <small>
-                        {formatPercent(item.projected_rise_percent)} projected -{' '}
+                        {formatCompact(item.projected_profit_per_unit)} profit/item -{' '}
                         {Math.round(item.projection_confidence * 100)}% confidence
                       </small>
                     </div>
@@ -1682,7 +1711,7 @@ function App() {
                       ]}
                     />
                     <span className="table-score">
-                      <span>{scoreInvestmentItem(item)}</span>
+                      <span>{Math.round(item.projection_confidence * 100)}%</span>
                     </span>
                   </div>
                 ))

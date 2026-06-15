@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import (
+    BACKTEST_HORIZONS,
     MAX_NPC_ARBITRAGE_MARGIN,
     MAX_MOMENTUM_SINGLE_JUMP,
     MIN_INVESTMENT_SLOT_VALUE,
@@ -50,6 +51,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def refresh_backtests_on_startup(limit: int = 1000) -> dict[str, int]:
+    """Evaluate all supported backtest horizons when the API starts."""
+    evaluated: dict[str, int] = {}
+    for horizon in BACKTEST_HORIZONS:
+        evaluated[horizon] = evaluate_signal_backtests(limit=limit, horizon=horizon)
+
+    return evaluated
+
+
+@app.on_event("startup")
+def startup_refresh_backtests() -> None:
+    refresh_backtests_on_startup()
 
 
 @app.get("/health")

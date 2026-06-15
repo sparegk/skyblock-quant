@@ -24,7 +24,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from app import database
 
 
-DEFAULT_BACKTEST_HORIZONS = ("next_snapshot", "1h", "6h", "24h")
+DEFAULT_BACKTEST_HORIZONS = ("next_snapshot", "1h", "6h", "24h", "7d")
 
 
 def parse_horizons(value: str) -> tuple[str, ...]:
