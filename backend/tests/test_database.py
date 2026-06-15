@@ -158,6 +158,10 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertIn("projected_rise_percent", steady_rise)
         self.assertIn("projected_target_price", steady_rise)
         self.assertIn("projection_confidence", steady_rise)
+        self.assertIn("market_quality_score", steady_rise)
+        self.assertIn("risk_penalty_score", steady_rise)
+        self.assertIn("spread_quality_score", steady_rise)
+        self.assertIn("order_imbalance", steady_rise)
         self.assertEqual(64, steady_rise["estimated_stack_size"])
         self.assertGreaterEqual(steady_rise["storage_slot_value"], 5_000)
         self.assertIn("investment_score", steady_rise)
@@ -170,6 +174,101 @@ class NpcArbitrageTests(unittest.TestCase):
         )
         self.assertGreater(steady_rise["projection_confidence"], 0)
         self.assertLessEqual(steady_rise["projection_confidence"], 0.95)
+
+    def test_craft_value_soft_caps_investment_projection_targets(self) -> None:
+        item = database.add_investment_projection_fields(
+            {
+                "item_id": "SHARD_ETHERDRAKE",
+                "category": None,
+                "latest_midpoint_price": 1_900_000.0,
+                "buy_price": 2_400_000.0,
+                "sell_price": 1_400_000.0,
+                "observed_snapshots": 5,
+                "gain_percent": 0.2,
+                "rising_steps": 4,
+                "max_single_jump": 0.05,
+                "average_volume": 100_000,
+                "average_orders": 100,
+            }
+        )
+
+        self.assertEqual(0.0, item["projected_rise_percent"])
+        self.assertEqual(0.0, item["projected_profit_per_unit"])
+        self.assertLess(item["projected_target_price"], item["latest_midpoint_price"])
+        self.assertGreater(item["projected_target_price"], 1_600_000.0)
+        self.assertEqual("craft-adjusted momentum", item["projection_basis"])
+        self.assertEqual(1_500_000.0, item["valuation_anchor_price"])
+        self.assertGreater(item["craft_value_premium"], 0)
+        self.assertLess(item["craft_value_premium"], 0.1)
+        self.assertEqual(
+            "market is already above craft-adjusted target",
+            item["valuation_warning"],
+        )
+
+    def test_craft_value_can_project_above_cost_when_market_quality_is_clean(self) -> None:
+        item = database.add_investment_projection_fields(
+            {
+                "item_id": "SHARD_ETHERDRAKE",
+                "category": None,
+                "latest_midpoint_price": 1_550_000.0,
+                "buy_price": 1_590_000.0,
+                "sell_price": 1_510_000.0,
+                "observed_snapshots": 5,
+                "gain_percent": 0.2,
+                "rising_steps": 4,
+                "max_single_jump": 0.05,
+                "average_volume": 500_000,
+                "average_orders": 500,
+            }
+        )
+
+        self.assertGreater(item["projected_target_price"], 1_600_000.0)
+        self.assertGreater(item["projected_rise_percent"], 0)
+        self.assertGreater(item["craft_value_premium"], 0.1)
+        self.assertEqual("craft-adjusted momentum", item["projection_basis"])
+
+    def test_market_quality_penalizes_wide_spread_and_imbalance(self) -> None:
+        base_item = {
+            "item_id": "TEST_ITEM",
+            "category": None,
+            "latest_midpoint_price": 100_000.0,
+            "observed_snapshots": 5,
+            "gain_percent": 0.12,
+            "rising_steps": 4,
+            "max_single_jump": 0.04,
+            "average_volume": 500_000,
+            "average_orders": 500,
+        }
+        clean_market = database.add_investment_projection_fields(
+            {
+                **base_item,
+                "buy_price": 102_000.0,
+                "sell_price": 98_000.0,
+                "buy_volume": 250_000,
+                "sell_volume": 250_000,
+                "buy_orders": 250,
+                "sell_orders": 250,
+            }
+        )
+        messy_market = database.add_investment_projection_fields(
+            {
+                **base_item,
+                "buy_price": 150_000.0,
+                "sell_price": 50_000.0,
+                "buy_volume": 10_000,
+                "sell_volume": 490_000,
+                "buy_orders": 10,
+                "sell_orders": 490,
+            }
+        )
+
+        self.assertGreater(
+            clean_market["market_quality_score"],
+            messy_market["market_quality_score"],
+        )
+        self.assertGreater(clean_market["investment_score"], messy_market["investment_score"])
+        self.assertGreater(messy_market["risk_penalty_score"], clean_market["risk_penalty_score"])
+        self.assertLess(messy_market["spread_penalty"], clean_market["spread_penalty"])
 
     def test_returns_occurrence_investments_with_market_context(self) -> None:
         database.OCCURRENCE_INVESTMENTS_PATH.write_text(

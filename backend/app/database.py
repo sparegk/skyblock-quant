@@ -42,6 +42,13 @@ TARGET_INVESTMENT_SLOT_VALUE = 250_000.0
 TARGET_INVESTMENT_PROFIT_PER_SLOT = 25_000.0
 TARGET_NPC_PROFIT_PER_SELL_ACTION = 20_000.0
 STALE_SNAPSHOT_MINUTES = 20
+WIDE_INVESTMENT_SPREAD = 0.25
+MAX_CRAFT_VALUE_MOMENTUM_PREMIUM = 0.25
+INVESTMENT_LIQUIDITY_TARGET_VOLUME = 250_000.0
+INVESTMENT_DEPTH_TARGET_ORDERS = 300.0
+KNOWN_CRAFT_VALUE_RANGES = {
+    "SHARD_ETHERDRAKE": (1_400_000.0, 1_600_000.0),
+}
 BACKTEST_HORIZONS = {
     "next_snapshot": None,
     "1h": timedelta(hours=1),
@@ -1026,8 +1033,12 @@ def add_npc_interaction_fields(item: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
+def clamp(value: float, minimum: float, maximum: float) -> float:
+    return min(max(value, minimum), maximum)
+
+
 def add_investment_projection_fields(item: dict[str, Any]) -> dict[str, Any]:
-    """Estimate near-term upside from recent momentum, liquidity, and jump risk."""
+    """Estimate near-term upside from momentum, spread, and valuation anchors."""
     add_investment_storage_fields(item)
     observed_steps = max(item["observed_snapshots"] - 1, 1)
     trend_consistency = min(max(item["rising_steps"] / observed_steps, 0), 1)
@@ -1039,19 +1050,123 @@ def add_investment_projection_fields(item: dict[str, Any]) -> dict[str, Any]:
         + min(item["average_orders"] / 300, 1) * 0.1,
     )
     jump_penalty = max(0.55, 1 - item["max_single_jump"] * 1.5)
-    projected_rise_percent = min(
+    raw_projected_rise_percent = min(
         0.5,
         max(0, item["gain_percent"] * trend_multiplier * liquidity_multiplier * jump_penalty),
     )
+    midpoint_price = float(item["latest_midpoint_price"])
+    buy_price = float(item.get("buy_price") or 0)
+    sell_price = float(item.get("sell_price") or 0)
+    buy_volume = float(item.get("buy_volume") or 0)
+    sell_volume = float(item.get("sell_volume") or 0)
+    buy_orders = float(item.get("buy_orders") or 0)
+    sell_orders = float(item.get("sell_orders") or 0)
+    spread_percent = (
+        abs(buy_price - sell_price) / midpoint_price
+        if midpoint_price > 0 and buy_price > 0 and sell_price > 0
+        else 0.0
+    )
+    spread_penalty = (
+        max(0.15, 1 - min(spread_percent, 0.85))
+        if spread_percent >= WIDE_INVESTMENT_SPREAD
+        else 1.0
+    )
+    spread_quality_score = clamp(1 - spread_percent / 0.35, 0.0, 1.0)
+    liquidity_score = clamp(
+        float(item["average_volume"]) / INVESTMENT_LIQUIDITY_TARGET_VOLUME,
+        0.0,
+        1.0,
+    )
+    order_depth_score = clamp(
+        float(item["average_orders"]) / INVESTMENT_DEPTH_TARGET_ORDERS,
+        0.0,
+        1.0,
+    )
+    volume_balance_score = (
+        min(buy_volume, sell_volume) / max(buy_volume, sell_volume)
+        if max(buy_volume, sell_volume) > 0
+        else 0.0
+    )
+    order_imbalance = (
+        abs(buy_orders - sell_orders) / (buy_orders + sell_orders)
+        if buy_orders + sell_orders > 0
+        else 1.0
+    )
+    order_balance_score = 1 - order_imbalance
+    volatility_score = clamp(1 - item["max_single_jump"] / 0.35, 0.0, 1.0)
+    trend_quality_score = trend_consistency
+    market_quality_score = (
+        spread_quality_score * 0.22
+        + liquidity_score * 0.18
+        + order_depth_score * 0.14
+        + volume_balance_score * 0.12
+        + order_balance_score * 0.10
+        + volatility_score * 0.14
+        + trend_quality_score * 0.10
+    )
+    market_quality_multiplier = 0.55 + market_quality_score * 0.55
+    momentum_target_price = midpoint_price * (
+        1 + raw_projected_rise_percent * spread_penalty * market_quality_multiplier
+    )
+    projection_basis = "momentum"
+    valuation_anchor_price = None
+    valuation_anchor_label = None
+    valuation_warning = None
+    craft_value_premium = None
+
+    craft_value_range = KNOWN_CRAFT_VALUE_RANGES.get(str(item.get("item_id") or "").upper())
+    if craft_value_range is not None:
+        craft_low, craft_high = craft_value_range
+        craft_midpoint = (craft_low + craft_high) / 2
+        craft_value_premium = min(
+            MAX_CRAFT_VALUE_MOMENTUM_PREMIUM,
+            raw_projected_rise_percent
+            * (0.35 + trend_consistency * 0.35)
+            * spread_penalty
+            * market_quality_multiplier
+            * min(liquidity_multiplier, 1.1),
+        )
+        craft_target_cap = craft_high * (1 + craft_value_premium)
+        valuation_anchor_price = craft_midpoint
+        valuation_anchor_label = f"craft value {craft_low:,.0f}-{craft_high:,.0f}"
+        projection_basis = "craft-adjusted momentum"
+
+        if momentum_target_price > craft_target_cap:
+            momentum_target_price = craft_target_cap
+            valuation_warning = "target limited by craft-value premium"
+
+        if midpoint_price >= craft_target_cap:
+            valuation_warning = "market is already above craft-adjusted target"
+
+    projected_target_price = momentum_target_price
+    projected_profit_per_unit = max(0.0, projected_target_price - midpoint_price)
+    projected_rise_percent = (
+        projected_profit_per_unit / midpoint_price if midpoint_price > 0 else 0.0
+    )
 
     item["projected_rise_percent"] = projected_rise_percent
-    item["projected_target_price"] = item["latest_midpoint_price"] * (
-        1 + projected_rise_percent
-    )
-    item["projected_profit_per_unit"] = item["latest_midpoint_price"] * projected_rise_percent
+    item["projected_target_price"] = projected_target_price
+    item["projected_profit_per_unit"] = projected_profit_per_unit
     item["projected_profit_per_slot"] = (
-        item["storage_slot_value"] * projected_rise_percent
+        item["estimated_stack_size"] * projected_profit_per_unit
     )
+    item["raw_projected_rise_percent"] = raw_projected_rise_percent
+    item["projection_basis"] = projection_basis
+    item["valuation_anchor_price"] = valuation_anchor_price
+    item["valuation_anchor_label"] = valuation_anchor_label
+    item["valuation_warning"] = valuation_warning
+    item["craft_value_premium"] = craft_value_premium
+    item["spread_percent"] = spread_percent
+    item["spread_penalty"] = spread_penalty
+    item["market_quality_score"] = market_quality_score
+    item["spread_quality_score"] = spread_quality_score
+    item["liquidity_score"] = liquidity_score
+    item["order_depth_score"] = order_depth_score
+    item["volume_balance_score"] = volume_balance_score
+    item["order_imbalance"] = order_imbalance
+    item["order_balance_score"] = order_balance_score
+    item["volatility_score"] = volatility_score
+    item["trend_quality_score"] = trend_quality_score
     item["profit_efficiency_score"] = min(
         100.0,
         max(
@@ -1065,26 +1180,30 @@ def add_investment_projection_fields(item: dict[str, Any]) -> dict[str, Any]:
         0.95,
         max(
             0.1,
-            0.3
-            + trend_consistency * 0.35
-            + min(math.log10(max(item["average_volume"], 1)) / 6, 1) * 0.2
-            + min(item["average_orders"] / 300, 1) * 0.1
-            - min(item["max_single_jump"], 0.5) * 0.4,
+            0.18
+            + market_quality_score * 0.52
+            + trend_consistency * 0.16
+            + min(math.log10(max(item["average_volume"], 1)) / 6, 1) * 0.10
+            - min(item["max_single_jump"], 0.5) * 0.16,
         ),
     )
-    liquidity_score = min(
-        100.0,
-        min(item["average_volume"] / 200_000, 1) * 70
-        + min(item["average_orders"] / 300, 1) * 30,
+    risk_penalty_score = (
+        (1 - spread_quality_score) * 35
+        + order_imbalance * 20
+        + (1 - volatility_score) * 25
+        + (1 - volume_balance_score) * 10
+        + (1 - liquidity_score) * 10
     )
     item["investment_score"] = (
-        projected_rise_percent * 100 * 0.3
+        projected_rise_percent * 100 * 0.26
         + item["projection_confidence"] * 100 * 0.25
-        + item["profit_efficiency_score"] * 0.2
-        + item["storage_efficiency_score"] * 0.1
-        + liquidity_score * 0.1
+        + item["profit_efficiency_score"] * 0.16
+        + market_quality_score * 100 * 0.16
+        + item["storage_efficiency_score"] * 0.07
         + trend_consistency * 100 * 0.05
+        - risk_penalty_score * 0.05
     )
+    item["risk_penalty_score"] = risk_penalty_score
     return item
 
 

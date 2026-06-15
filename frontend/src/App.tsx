@@ -184,6 +184,24 @@ type InvestmentMomentumItem = {
   momentum_score: number
   projected_rise_percent: number
   projected_target_price: number
+  raw_projected_rise_percent: number
+  projection_basis: string
+  valuation_anchor_price: number | null
+  valuation_anchor_label: string | null
+  valuation_warning: string | null
+  craft_value_premium: number | null
+  spread_percent: number
+  spread_penalty: number
+  market_quality_score: number
+  spread_quality_score: number
+  liquidity_score: number
+  order_depth_score: number
+  volume_balance_score: number
+  order_imbalance: number
+  order_balance_score: number
+  volatility_score: number
+  trend_quality_score: number
+  risk_penalty_score: number
   projection_confidence: number
   estimated_stack_size: number
   storage_slot_value: number
@@ -441,6 +459,34 @@ function scoreInvestmentItem(item: InvestmentMomentumItem) {
 
 function scoreInvestmentRank(item: InvestmentMomentumItem) {
   return item.projected_profit_per_unit * (0.55 + item.projection_confidence * 0.45)
+}
+
+function getProjectionHint(item: InvestmentMomentumItem) {
+  if (item.valuation_warning) {
+    return item.valuation_warning
+  }
+
+  if (item.valuation_anchor_label) {
+    if (item.craft_value_premium !== null && item.craft_value_premium > 0) {
+      return `${item.valuation_anchor_label} + ${formatPercent(item.craft_value_premium)} premium`
+    }
+
+    return item.valuation_anchor_label
+  }
+
+  if (item.spread_penalty < 1) {
+    return `spread adjusted from ${formatPercent(item.raw_projected_rise_percent)} raw`
+  }
+
+  return `${formatCompact(item.projected_target_price)} target`
+}
+
+function getProjectionQualityHint(item: InvestmentMomentumItem) {
+  const quality = Math.round(item.market_quality_score * 100)
+  const spread = formatPercent(item.spread_percent)
+  const risk = Math.round(item.risk_penalty_score)
+
+  return `quality ${quality} - spread ${spread} - risk ${risk}`
 }
 
 function getNpcQualityLabel(item: NpcArbitrageItem) {
@@ -1407,8 +1453,8 @@ function App() {
                       <DetailMetric
                         label="potential rise"
                         value={formatPercent(featuredInvestment.projected_rise_percent)}
-                        hint={`${formatCompact(featuredInvestment.projected_target_price)} target`}
-                        positive
+                        hint={getProjectionHint(featuredInvestment)}
+                        positive={featuredInvestment.projected_rise_percent > 0}
                       />
                       <DetailMetric
                         label="profit/item"
@@ -1419,7 +1465,7 @@ function App() {
                       <DetailMetric
                         label="confidence"
                         value={<span className="score-badge">{Math.round(featuredInvestment.projection_confidence * 100)}</span>}
-                        hint="projection quality"
+                        hint={getProjectionQualityHint(featuredInvestment)}
                         positive
                       />
                     </div>
@@ -1454,7 +1500,7 @@ function App() {
                         <span className="positive">{formatPercent(item.gain_percent)}</span>
                         <span className="projection-cell">
                           <b>{formatPercent(item.projected_rise_percent)}</b>
-                          <small>{formatCompact(item.projected_target_price)} target</small>
+                          <small>{getProjectionHint(item)}</small>
                         </span>
                         <span className="projection-cell">
                           <b>{formatCompact(item.projected_profit_per_unit)}</b>
@@ -1462,6 +1508,7 @@ function App() {
                         </span>
                         <span className="table-score">
                           <span>{Math.round(item.projection_confidence * 100)}%</span>
+                          <small>{Math.round(item.market_quality_score * 100)} quality</small>
                         </span>
                       </div>
                     )) : (
