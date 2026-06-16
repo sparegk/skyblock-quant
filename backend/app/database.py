@@ -25,9 +25,16 @@ NPC_ARBITRAGE_HISTORY_SNAPSHOTS = 5
 MIN_NPC_ARBITRAGE_PROFITABLE_SNAPSHOTS = 2
 NPC_ARBITRAGE_STABLE_SELL_VOLUME = 20_000
 NPC_ARBITRAGE_STABLE_SELL_ORDERS = 50
+NPC_ARBITRAGE_DEEP_SELL_VOLUME = 50_000
+NPC_ARBITRAGE_DEEP_SELL_ORDERS = 100
 NPC_ARBITRAGE_HIGH_MARGIN = 0.20
+NPC_ARBITRAGE_EXTREME_MARGIN = 0.40
 NPC_ARBITRAGE_HIGH_PRICE_JUMP = 0.25
 NPC_ARBITRAGE_WIDE_SPREAD = 0.20
+NPC_ARBITRAGE_SEVERE_IMBALANCE = 0.20
+NPC_ARBITRAGE_THIN_DEPTH_SCORE = 0.35
+NPC_ARBITRAGE_PROFIT_SPIKE_RATIO = 1.75
+NPC_ARBITRAGE_RECENT_DEPTH_RATIO = 0.50
 MOMENTUM_HISTORY_SNAPSHOTS = 5
 MIN_MOMENTUM_OBSERVED_SNAPSHOTS = 3
 MIN_MOMENTUM_VOLUME = 10_000
@@ -569,50 +576,121 @@ def get_top_spreads(limit: int = 25) -> list[dict[str, Any]]:
 def add_npc_arbitrage_risk_fields(row: dict[str, Any]) -> dict[str, Any]:
     """Add risk score, label, and reasons to an NPC arbitrage row."""
     risk_reasons = []
-    risk_score = 0.1
+    risk_score = 0.05
+    sell_volume = float(row.get("sell_volume") or 0)
+    buy_volume = float(row.get("buy_volume") or 0)
+    sell_orders = float(row.get("sell_orders") or 0)
+    buy_orders = float(row.get("buy_orders") or 0)
+    profit_margin = float(row.get("profit_margin") or 0)
+    max_recent_price_jump = float(row.get("max_recent_price_jump") or 0)
+    spread_percent = float(row.get("spread_percent") or 0)
+    profit_consistency = float(row.get("profit_consistency") or 0)
+    interaction_efficiency_score = float(row.get("interaction_efficiency_score") or 100)
+    average_profit_per_item = float(row.get("average_profit_per_item") or 0)
+    profit_per_item = float(row.get("profit_per_item") or 0)
+    average_sell_volume = float(row.get("average_sell_volume") or sell_volume)
+    average_sell_orders = float(row.get("average_sell_orders") or sell_orders)
+    min_sell_volume = float(row.get("min_sell_volume") or sell_volume)
+    min_sell_orders = float(row.get("min_sell_orders") or sell_orders)
 
-    if row.get("profit_consistency", 0) < 0.75:
+    volume_balance_score = (
+        min(buy_volume, sell_volume) / max(buy_volume, sell_volume)
+        if max(buy_volume, sell_volume) > 0
+        else 0.0
+    )
+    order_balance_score = (
+        min(buy_orders, sell_orders) / max(buy_orders, sell_orders)
+        if max(buy_orders, sell_orders) > 0
+        else 0.0
+    )
+    sell_depth_score = min(
+        min(sell_volume / NPC_ARBITRAGE_DEEP_SELL_VOLUME, 1.0),
+        min(sell_orders / NPC_ARBITRAGE_DEEP_SELL_ORDERS, 1.0),
+    )
+    recent_depth_ratio = min(
+        min_sell_volume / max(average_sell_volume, 1.0),
+        min_sell_orders / max(average_sell_orders, 1.0),
+    )
+    profit_spike_ratio = (
+        profit_per_item / average_profit_per_item
+        if average_profit_per_item > 0 and profit_per_item > 0
+        else 1.0
+    )
+
+    if profit_consistency < 0.75:
         risk_score += 0.25
         risk_reasons.append("profit only appears in some recent snapshots")
 
-    if row.get("profit_margin", 0) >= NPC_ARBITRAGE_HIGH_MARGIN:
+    if profit_margin >= NPC_ARBITRAGE_EXTREME_MARGIN:
+        risk_score += 0.35
+        risk_reasons.append("profit margin is unusually wide")
+        risk_reasons.append("profit margin is extreme for an NPC exit")
+    elif profit_margin >= NPC_ARBITRAGE_HIGH_MARGIN:
         risk_score += 0.2
         risk_reasons.append("profit margin is unusually wide")
 
-    if row.get("sell_volume", 0) < NPC_ARBITRAGE_STABLE_SELL_VOLUME:
+    if sell_volume < NPC_ARBITRAGE_STABLE_SELL_VOLUME:
         risk_score += 0.2
         risk_reasons.append("sell volume is thin")
 
-    if row.get("sell_orders", 0) < NPC_ARBITRAGE_STABLE_SELL_ORDERS:
+    if sell_orders < NPC_ARBITRAGE_STABLE_SELL_ORDERS:
         risk_score += 0.15
         risk_reasons.append("sell order count is thin")
 
-    if row.get("max_recent_price_jump", 0) >= NPC_ARBITRAGE_HIGH_PRICE_JUMP:
+    if sell_depth_score < NPC_ARBITRAGE_THIN_DEPTH_SCORE:
+        risk_score += 0.15
+        risk_reasons.append("top-of-book depth is shallow")
+
+    if volume_balance_score < NPC_ARBITRAGE_SEVERE_IMBALANCE:
+        risk_score += 0.15
+        risk_reasons.append("buy and sell volume are badly imbalanced")
+
+    if order_balance_score < NPC_ARBITRAGE_SEVERE_IMBALANCE:
+        risk_score += 0.12
+        risk_reasons.append("buy and sell order counts are badly imbalanced")
+
+    if recent_depth_ratio < NPC_ARBITRAGE_RECENT_DEPTH_RATIO:
+        risk_score += 0.12
+        risk_reasons.append("recent sell-side depth has been inconsistent")
+
+    if max_recent_price_jump >= NPC_ARBITRAGE_HIGH_PRICE_JUMP:
         risk_score += 0.25
         risk_reasons.append("recent price movement is volatile")
 
-    if row.get("spread_percent", 0) >= NPC_ARBITRAGE_WIDE_SPREAD:
+    if spread_percent >= NPC_ARBITRAGE_WIDE_SPREAD:
         risk_score += 0.1
         risk_reasons.append("bazaar spread is wide")
 
-    if row.get("interaction_efficiency_score", 100) < 25:
-        risk_score += 0.15
+    if profit_spike_ratio >= NPC_ARBITRAGE_PROFIT_SPIKE_RATIO:
+        risk_score += 0.12
+        risk_reasons.append("latest profit is much higher than recent average")
+
+    if interaction_efficiency_score < 25:
+        risk_score += 0.12
         risk_reasons.append("profit per sell action is low")
 
     risk_score = min(1.0, risk_score)
 
-    if row.get("max_recent_price_jump", 0) >= NPC_ARBITRAGE_HIGH_PRICE_JUMP:
+    if max_recent_price_jump >= NPC_ARBITRAGE_HIGH_PRICE_JUMP:
         risk_label = "volatile"
     elif (
-        row.get("profit_margin", 0) >= NPC_ARBITRAGE_HIGH_MARGIN
-        or row.get("spread_percent", 0) >= NPC_ARBITRAGE_WIDE_SPREAD
+        profit_margin >= NPC_ARBITRAGE_HIGH_MARGIN
+        or spread_percent >= NPC_ARBITRAGE_WIDE_SPREAD
+        or profit_spike_ratio >= NPC_ARBITRAGE_PROFIT_SPIKE_RATIO
     ):
         risk_label = "possible manipulation"
     elif (
-        row.get("sell_volume", 0) < NPC_ARBITRAGE_STABLE_SELL_VOLUME
-        or row.get("sell_orders", 0) < NPC_ARBITRAGE_STABLE_SELL_ORDERS
+        sell_volume < NPC_ARBITRAGE_STABLE_SELL_VOLUME
+        or sell_orders < NPC_ARBITRAGE_STABLE_SELL_ORDERS
+        or sell_depth_score < NPC_ARBITRAGE_THIN_DEPTH_SCORE
     ):
         risk_label = "thin liquidity"
+    elif (
+        volume_balance_score < NPC_ARBITRAGE_SEVERE_IMBALANCE
+        or order_balance_score < NPC_ARBITRAGE_SEVERE_IMBALANCE
+        or recent_depth_ratio < NPC_ARBITRAGE_RECENT_DEPTH_RATIO
+    ):
+        risk_label = "fragile book"
     else:
         risk_label = "stable"
 
@@ -624,6 +702,12 @@ def add_npc_arbitrage_risk_fields(row: dict[str, Any]) -> dict[str, Any]:
         "risk_score": round(risk_score, 4),
         "risk_label": risk_label,
         "risk_reasons": risk_reasons,
+        "volume_balance_score": round(volume_balance_score, 4),
+        "order_balance_score": round(order_balance_score, 4),
+        "sell_depth_score": round(sell_depth_score, 4),
+        "recent_depth_ratio": round(recent_depth_ratio, 4),
+        "profit_spike_ratio": round(profit_spike_ratio, 4),
+        "risk_adjusted_profit": row.get("action_adjusted_profit", 0) * (1 - risk_score * 0.45),
     }
 
 
@@ -697,6 +781,12 @@ def get_npc_arbitrage(
                             ELSE NULL
                         END
                     ) AS average_profit_per_item,
+                    AVG(snapshots.buy_volume) AS average_buy_volume,
+                    AVG(snapshots.sell_volume) AS average_sell_volume,
+                    AVG(snapshots.buy_orders) AS average_buy_orders,
+                    AVG(snapshots.sell_orders) AS average_sell_orders,
+                    MIN(snapshots.sell_volume) AS min_sell_volume,
+                    MIN(snapshots.sell_orders) AS min_sell_orders,
                     MAX(
                         CASE
                             WHEN snapshots.previous_sell_price > 0
@@ -730,6 +820,12 @@ def get_npc_arbitrage(
                     history.observed_snapshots,
                     history.profitable_snapshots,
                     history.average_profit_per_item,
+                    history.average_buy_volume,
+                    history.average_sell_volume,
+                    history.average_buy_orders,
+                    history.average_sell_orders,
+                    history.min_sell_volume,
+                    history.min_sell_orders,
                     history.max_recent_price_jump
                 FROM bazaar_snapshots AS snapshots
                 INNER JOIN items
@@ -781,6 +877,12 @@ def get_npc_arbitrage(
                     observed_snapshots,
                     profitable_snapshots,
                     average_profit_per_item,
+                    average_buy_volume,
+                    average_sell_volume,
+                    average_buy_orders,
+                    average_sell_orders,
+                    min_sell_volume,
+                    min_sell_orders,
                     max_recent_price_jump,
                     profitable_snapshots * 1.0 / observed_snapshots AS profit_consistency,
                     CASE
@@ -823,6 +925,7 @@ def get_npc_arbitrage(
     ]
     enriched_rows.sort(
         key=lambda item: (
+            item["risk_adjusted_profit"],
             item["action_adjusted_profit"],
             item["history_adjusted_profit"],
             item["profit_per_sell_action"],
@@ -913,6 +1016,16 @@ def get_npc_arbitrage_detail(
         if previous_price > 0:
             price_jumps.append(abs(current_price - previous_price) / previous_price)
 
+    average_sell_volume = sum(row["sell_volume"] for row in history) / len(history)
+    average_sell_orders = sum(row["sell_orders"] for row in history) / len(history)
+    average_buy_volume = sum(row["buy_volume"] for row in history) / len(history)
+    average_buy_orders = sum(row["buy_orders"] for row in history) / len(history)
+    profitable_profits = [
+        row["profit_per_item"]
+        for row in history
+        if row["profit_per_item"] is not None and row["profit_per_item"] > 0
+    ]
+
     detail = {
         **dict(item),
         "latest": latest,
@@ -921,8 +1034,22 @@ def get_npc_arbitrage_detail(
         "profitable_snapshots": profitable_snapshots,
         "profit_consistency": profitable_snapshots / len(history),
         "profit_margin": latest["profit_margin"] or 0,
+        "profit_per_item": latest["profit_per_item"] or 0,
+        "average_profit_per_item": (
+            sum(profitable_profits) / len(profitable_profits)
+            if profitable_profits
+            else 0
+        ),
+        "buy_volume": latest["buy_volume"],
         "sell_volume": latest["sell_volume"],
+        "buy_orders": latest["buy_orders"],
         "sell_orders": latest["sell_orders"],
+        "average_buy_volume": average_buy_volume,
+        "average_sell_volume": average_sell_volume,
+        "average_buy_orders": average_buy_orders,
+        "average_sell_orders": average_sell_orders,
+        "min_sell_volume": min(row["sell_volume"] for row in history),
+        "min_sell_orders": min(row["sell_orders"] for row in history),
         "max_recent_price_jump": max(price_jumps, default=0),
         "spread_percent": (
             abs(latest["bazaar_sell_price"] - latest["bazaar_buy_price"])

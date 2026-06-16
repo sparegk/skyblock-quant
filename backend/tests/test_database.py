@@ -66,6 +66,15 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertIn("max_recent_price_jump", high_estimated)
         self.assertIn("spread_percent", high_estimated)
         self.assertIn("interaction_efficiency_score", high_estimated)
+        self.assertIn("sell_depth_score", high_estimated)
+        self.assertIn("volume_balance_score", high_estimated)
+        self.assertIn("order_balance_score", high_estimated)
+        self.assertIn("risk_adjusted_profit", high_estimated)
+        self.assertGreater(high_estimated["sell_depth_score"], 0.3)
+        self.assertLess(
+            high_estimated["risk_adjusted_profit"],
+            high_estimated["action_adjusted_profit"],
+        )
 
     def test_allows_custom_filter_thresholds(self) -> None:
         rows = database.get_npc_arbitrage(
@@ -92,6 +101,61 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertGreater(high_margin["risk_score"], 0.3)
         self.assertIn("profit per sell action is low", low_volume["risk_reasons"])
         self.assertIn("profit margin is unusually wide", high_margin["risk_reasons"])
+        self.assertIn("profit margin is extreme for an NPC exit", high_margin["risk_reasons"])
+
+    def test_npc_risk_flags_fragile_order_books(self) -> None:
+        item = database.add_npc_arbitrage_risk_fields(
+            database.add_npc_interaction_fields(
+                {
+                    "profit_per_item": 400,
+                    "profit_margin": 0.08,
+                    "profit_consistency": 1.0,
+                    "buy_volume": 200_000,
+                    "sell_volume": 25_000,
+                    "buy_orders": 250,
+                    "sell_orders": 60,
+                    "average_sell_volume": 80_000,
+                    "average_sell_orders": 160,
+                    "min_sell_volume": 20_000,
+                    "min_sell_orders": 50,
+                    "max_recent_price_jump": 0.05,
+                    "spread_percent": 0.04,
+                    "history_adjusted_profit": 1_000_000,
+                }
+            )
+        )
+
+        self.assertEqual("fragile book", item["risk_label"])
+        self.assertGreater(item["risk_score"], 0.25)
+        self.assertIn("buy and sell volume are badly imbalanced", item["risk_reasons"])
+        self.assertIn("recent sell-side depth has been inconsistent", item["risk_reasons"])
+
+    def test_npc_risk_flags_latest_profit_spikes(self) -> None:
+        item = database.add_npc_arbitrage_risk_fields(
+            database.add_npc_interaction_fields(
+                {
+                    "profit_per_item": 220,
+                    "average_profit_per_item": 100,
+                    "profit_margin": 0.12,
+                    "profit_consistency": 1.0,
+                    "buy_volume": 80_000,
+                    "sell_volume": 80_000,
+                    "buy_orders": 120,
+                    "sell_orders": 120,
+                    "average_sell_volume": 80_000,
+                    "average_sell_orders": 120,
+                    "min_sell_volume": 75_000,
+                    "min_sell_orders": 110,
+                    "max_recent_price_jump": 0.05,
+                    "spread_percent": 0.04,
+                    "history_adjusted_profit": 1_000_000,
+                }
+            )
+        )
+
+        self.assertEqual("possible manipulation", item["risk_label"])
+        self.assertIn("latest profit is much higher than recent average", item["risk_reasons"])
+        self.assertGreaterEqual(item["profit_spike_ratio"], 2.0)
 
     def test_returns_empty_without_items_table(self) -> None:
         database.DATABASE_PATH = Path(self.temp_dir.name) / "missing_items.db"

@@ -109,6 +109,12 @@ type NpcArbitrageItem = {
   risk_score: number
   risk_label: string
   risk_reasons: string[]
+  volume_balance_score: number
+  order_balance_score: number
+  sell_depth_score: number
+  recent_depth_ratio: number
+  profit_spike_ratio: number
+  risk_adjusted_profit: number
   estimated_stack_size: number
   profit_per_sell_action: number
   interaction_efficiency_score: number
@@ -146,13 +152,29 @@ type NpcArbitrageDetail = {
   profitable_snapshots: number
   profit_consistency: number
   profit_margin: number
+  profit_per_item: number
+  average_profit_per_item: number
+  buy_volume: number
   sell_volume: number
+  buy_orders: number
   sell_orders: number
+  average_buy_volume: number
+  average_sell_volume: number
+  average_buy_orders: number
+  average_sell_orders: number
+  min_sell_volume: number
+  min_sell_orders: number
   max_recent_price_jump: number
   spread_percent: number
   risk_score: number
   risk_label: string
   risk_reasons: string[]
+  volume_balance_score: number
+  order_balance_score: number
+  sell_depth_score: number
+  recent_depth_ratio: number
+  profit_spike_ratio: number
+  risk_adjusted_profit: number
   estimated_stack_size: number
   profit_per_sell_action: number
   interaction_efficiency_score: number
@@ -1341,6 +1363,24 @@ function App() {
                           hint="profitable snapshots"
                           positive={selectedNpcDetail.profit_consistency >= 0.75}
                         />
+                        <DetailMetric
+                          label="book depth"
+                          value={`${Math.round(selectedNpcDetail.sell_depth_score * 100)}%`}
+                          hint={`${formatCompact(selectedNpcDetail.min_sell_volume)} min sell volume`}
+                          positive={selectedNpcDetail.sell_depth_score >= 0.35}
+                        />
+                        <DetailMetric
+                          label="book balance"
+                          value={`${Math.round(selectedNpcDetail.volume_balance_score * 100)}%`}
+                          hint="buy/sell volume balance"
+                          positive={selectedNpcDetail.volume_balance_score >= 0.2}
+                        />
+                        <DetailMetric
+                          label="profit spike"
+                          value={`${selectedNpcDetail.profit_spike_ratio.toFixed(1)}x`}
+                          hint="latest vs recent average"
+                          positive={selectedNpcDetail.profit_spike_ratio < 1.75}
+                        />
                       </div>
                       <div className="history-table">
                         <MiniLineChart
@@ -1644,6 +1684,24 @@ function App() {
                           value={formatPercent(selectedNpcDetail.spread_percent)}
                           hint={selectedNpcDetail.risk_reasons[0] ?? 'risk check'}
                           positive={selectedNpcDetail.spread_percent < 0.2}
+                        />
+                        <DetailMetric
+                          label="book depth"
+                          value={`${Math.round(selectedNpcDetail.sell_depth_score * 100)}%`}
+                          hint={`${formatCompact(selectedNpcDetail.min_sell_volume)} min sell volume`}
+                          positive={selectedNpcDetail.sell_depth_score >= 0.35}
+                        />
+                        <DetailMetric
+                          label="book balance"
+                          value={`${Math.round(selectedNpcDetail.volume_balance_score * 100)}%`}
+                          hint="buy/sell volume balance"
+                          positive={selectedNpcDetail.volume_balance_score >= 0.2}
+                        />
+                        <DetailMetric
+                          label="profit spike"
+                          value={`${selectedNpcDetail.profit_spike_ratio.toFixed(1)}x`}
+                          hint="latest vs recent average"
+                          positive={selectedNpcDetail.profit_spike_ratio < 1.75}
                         />
                       </div>
 
