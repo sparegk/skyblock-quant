@@ -458,7 +458,17 @@ function scoreInvestmentItem(item: InvestmentMomentumItem) {
 }
 
 function scoreInvestmentRank(item: InvestmentMomentumItem) {
-  return item.projected_profit_per_unit * (0.55 + item.projection_confidence * 0.45)
+  const priceWeight = Math.log10(Math.max(item.latest_midpoint_price, 1))
+  const slotValueWeight = Math.log10(Math.max(item.storage_slot_value, 1))
+  const priceImpact = 0.7 + Math.min(priceWeight / 7, 1) * 0.35
+  const slotImpact = 0.85 + Math.min(slotValueWeight / 8, 1) * 0.25
+
+  return (
+    item.projected_profit_per_unit
+    * (0.5 + item.projection_confidence * 0.35 + item.market_quality_score * 0.15)
+    * priceImpact
+    * slotImpact
+  )
 }
 
 function getProjectionHint(item: InvestmentMomentumItem) {
@@ -918,6 +928,14 @@ function App() {
 
   const featuredInvestment = rankedInvestments[0]
   const featuredOccurrenceInvestment = occurrenceItems[0]
+  const visibleBacktestResults = useMemo(
+    () => backtestResults.filter((result) => result.signal_type !== 'NPC_FLIP'),
+    [backtestResults],
+  )
+  const visibleBacktestSignalBreakdowns = useMemo(
+    () => backtestSummary?.by_signal_type.filter((row) => row.signal_type !== 'NPC_FLIP') ?? [],
+    [backtestSummary],
+  )
 
   const filteredInvestments = useMemo(() => {
     const cleanQuery = query.trim().toLowerCase()
@@ -1955,8 +1973,8 @@ function App() {
                   </div>
                   <div>
                     <h3>by signal</h3>
-                    {backtestSummary.by_signal_type.length > 0 ? (
-                      backtestSummary.by_signal_type.map((row) => (
+                    {visibleBacktestSignalBreakdowns.length > 0 ? (
+                      visibleBacktestSignalBreakdowns.map((row) => (
                         <div className="breakdown-row" key={row.signal_type}>
                           <span>{row.signal_type}</span>
                           <b>{Math.round(row.win_rate * 100)}%</b>
@@ -1964,30 +1982,34 @@ function App() {
                         </div>
                       ))
                     ) : (
-                      <p className="empty-state">waiting for signal results.</p>
+                      <p className="empty-state">waiting for non-arbitrage signal results.</p>
                     )}
                   </div>
                 </div>
 
                 <div className="backtest-result-list">
-                  {backtestResults.map((result) => (
-                    <div className="backtest-result-row" key={result.id}>
-                      <span
-                        className={
-                          result.was_successful ? 'alert-dot positive-dot' : 'alert-dot risk-dot'
-                        }
-                      />
-                      <div>
-                        <b>{result.item_name}</b>
-                        <small>
-                          {result.signal_type} - {result.horizon}
-                        </small>
+                  {visibleBacktestResults.length > 0 ? (
+                    visibleBacktestResults.map((result) => (
+                      <div className="backtest-result-row" key={result.id}>
+                        <span
+                          className={
+                            result.was_successful ? 'alert-dot positive-dot' : 'alert-dot risk-dot'
+                          }
+                        />
+                        <div>
+                          <b>{result.item_name}</b>
+                          <small>
+                            {result.signal_type} - {result.horizon}
+                          </small>
+                        </div>
+                        <strong className={result.return_percent >= 0 ? 'return-positive' : 'return-negative'}>
+                          {formatPercent(result.return_percent)}
+                        </strong>
                       </div>
-                      <strong className={result.return_percent >= 0 ? 'return-positive' : 'return-negative'}>
-                        {formatPercent(result.return_percent)}
-                      </strong>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <p className="empty-state">waiting for non-arbitrage backtest results.</p>
+                  )}
                 </div>
               </>
             ) : (
