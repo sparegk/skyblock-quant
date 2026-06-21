@@ -386,8 +386,14 @@
   min-width: 0;
 }
 
+.occurrence-watch-panel {
+  grid-column: 1;
+}
+
 .opportunity-detail-column {
   display: grid;
+  grid-column: 2;
+  grid-row: 1 / span 2;
   gap: 10px;
 }
 
@@ -516,7 +522,7 @@
 
 .featured-strip {
   display: grid;
-  grid-template-columns: minmax(240px, 0.68fr) minmax(0, 1.32fr);
+  grid-template-columns: minmax(210px, 0.55fr) minmax(150px, 0.45fr) minmax(0, 1.25fr);
   gap: 12px;
   align-items: stretch;
   margin-bottom: 10px;
@@ -524,6 +530,45 @@
   border-radius: 8px;
   background: rgba(98, 238, 89, 0.045);
   padding: 10px;
+}
+
+.investment-detail-chart {
+  display: grid;
+  min-width: 0;
+  grid-template-rows: minmax(54px, 1fr) auto;
+  gap: 6px;
+  border: 1px solid rgba(98, 238, 89, 0.18);
+  border-radius: 8px;
+  background: rgba(2, 12, 20, 0.26);
+  padding: 8px;
+}
+
+.investment-detail-chart .mini-chart {
+  min-height: 54px;
+}
+
+.investment-detail-chart div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+.investment-detail-chart b {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.investment-detail-chart span {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .compact-featured-head {
@@ -544,6 +589,10 @@
   overflow: hidden;
 }
 
+.selected-investment-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .featured-stat-row .detail-metric {
   min-height: 56px;
   border-bottom: 0;
@@ -555,6 +604,14 @@
 }
 
 .featured-stat-row .detail-metric:nth-child(5n) {
+  border-right: 0;
+}
+
+.selected-investment-metrics .detail-metric:nth-child(3n) {
+  border-right: 1px solid var(--border);
+}
+
+.selected-investment-metrics .detail-metric:nth-child(4n) {
   border-right: 0;
 }
 
@@ -711,6 +768,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+button.opportunity-row {
+  width: 100%;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
 .market-watch-panel .opportunity-row,
 .arbitrage-table .arbitrage-row {
   min-height: 40px;
@@ -745,11 +814,14 @@ button.arbitrage-row {
 }
 
 button.arbitrage-row:hover,
-.arbitrage-row.selected {
+button.opportunity-row:hover,
+.arbitrage-row.selected,
+.opportunity-row.selected {
   background: rgba(98, 238, 89, 0.055);
 }
 
-.arbitrage-row.selected {
+.arbitrage-row.selected,
+.opportunity-row.selected {
   border-color: rgba(98, 238, 89, 0.25);
 }
 
@@ -906,6 +978,44 @@ button.arbitrage-row:hover,
   border-bottom: 0;
 }
 
+.compact-risk-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.compact-risk-grid .detail-metric {
+  min-height: 54px;
+  padding: 9px 10px;
+}
+
+.compact-risk-grid .detail-metric:nth-child(3n) {
+  border-right: 1px solid var(--border);
+}
+
+.compact-risk-grid .detail-metric:nth-child(4n) {
+  border-right: 0;
+}
+
+.compact-risk-grid .detail-metric .metric-value {
+  font-size: 17px;
+}
+
+.compact-risk-grid .detail-metric small {
+  margin-top: 4px;
+  font-size: 10px;
+}
+
+.compact-npc-detail-grid.compact-risk-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.compact-npc-detail-grid.compact-risk-grid .detail-metric:nth-child(2n) {
+  border-right: 0;
+}
+
+.compact-npc-detail-grid.compact-risk-grid .detail-metric:nth-child(3n) {
+  border-right: 1px solid var(--border);
+}
+
 .risk-reason-list {
   display: flex;
   flex-wrap: wrap;
@@ -921,6 +1031,17 @@ button.arbitrage-row:hover,
   font-size: 11px;
   line-height: 1.2;
   padding: 5px 8px;
+}
+
+.compact-risk-reasons {
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.compact-risk-reasons span {
+  border-radius: 7px;
+  font-size: 10px;
+  padding: 4px 6px;
 }
 
 .occurrence-feature {
@@ -965,6 +1086,134 @@ button.arbitrage-row:hover,
   color: var(--green);
   font-size: 13px;
   text-transform: capitalize;
+}
+
+.occurrence-watch-list {
+  display: grid;
+  gap: 8px;
+}
+
+.occurrence-watch-row {
+  display: grid;
+  grid-template-columns: 30px 34px minmax(0, 1fr) minmax(245px, 0.52fr) minmax(120px, auto);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.026);
+  padding: 10px;
+}
+
+.occurrence-watch-row .item-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.occurrence-watch-main {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.occurrence-watch-main > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.occurrence-watch-main b {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.occurrence-watch-main small,
+.occurrence-watch-main p {
+  overflow: hidden;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.occurrence-watch-main small {
+  display: -webkit-box;
+  font-size: 11px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.occurrence-watch-main p {
+  display: -webkit-box;
+  margin: 0;
+  font-size: 11px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.occurrence-watch-row.expanded {
+  align-items: start;
+}
+
+.occurrence-watch-row.expanded .occurrence-watch-main p {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}
+
+.description-dots-button {
+  justify-self: start;
+  width: 28px;
+  min-height: 18px;
+  border: 1px solid rgba(98, 238, 89, 0.28);
+  border-radius: 999px;
+  background: rgba(98, 238, 89, 0.08);
+  color: var(--green);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0 6px 3px;
+}
+
+.description-dots-button:hover,
+.description-dots-button:focus-visible {
+  border-color: rgba(98, 238, 89, 0.55);
+  background: rgba(98, 238, 89, 0.14);
+  outline: none;
+}
+
+.occurrence-watch-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.occurrence-watch-stats span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.occurrence-watch-stats b {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.occurrence-watch-row .source-link {
+  justify-self: end;
+  margin-top: 0;
+  text-align: right;
 }
 
 .backtest-summary-grid {
@@ -1131,6 +1380,18 @@ button.arbitrage-row:hover,
   margin-top: 11px;
 }
 
+.compact-history-table {
+  gap: 0;
+  margin-top: 8px;
+}
+
+.compact-history-table .mini-chart.compact {
+  width: 100%;
+  height: 42px;
+  min-height: 42px;
+  margin-bottom: 4px;
+}
+
 .history-row {
   display: grid;
   grid-template-columns: minmax(130px, 1fr) repeat(3, minmax(82px, 0.55fr));
@@ -1141,6 +1402,13 @@ button.arbitrage-row:hover,
   color: var(--muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+.compact-history-table .history-row {
+  grid-template-columns: minmax(108px, 1fr) repeat(3, minmax(64px, 0.45fr));
+  gap: 8px;
+  min-height: 28px;
+  font-size: 11px;
 }
 
 .history-row:last-child {
@@ -1375,6 +1643,24 @@ button.arbitrage-row:hover,
   .right-column {
     grid-column: span 2;
   }
+
+  .opportunity-detail-column {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .occurrence-watch-panel {
+    grid-column: auto;
+  }
+
+  .occurrence-watch-row {
+    grid-template-columns: 30px 34px minmax(0, 1fr);
+  }
+
+  .occurrence-watch-stats,
+  .occurrence-watch-row .source-link {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 780px) {
@@ -1420,6 +1706,9 @@ button.arbitrage-row:hover,
   .featured-stat-row .detail-metric,
   .featured-stat-row .detail-metric:nth-child(3n),
   .featured-stat-row .detail-metric:nth-child(5n),
+  .selected-investment-metrics .detail-metric:nth-child(4n),
+  .compact-risk-grid .detail-metric:nth-child(2n),
+  .compact-risk-grid .detail-metric:nth-child(4n),
   .occurrence-metrics .detail-metric,
   .occurrence-metrics .detail-metric:nth-child(3n),
   .detail-metric,
@@ -1440,6 +1729,14 @@ button.arbitrage-row:hover,
     grid-template-columns: 1fr;
     gap: 6px;
     padding: 14px 0;
+  }
+
+  .occurrence-watch-row {
+    grid-template-columns: 1fr;
+  }
+
+  .occurrence-watch-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .npc-detail-grid {

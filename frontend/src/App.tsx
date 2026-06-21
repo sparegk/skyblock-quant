@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Bell,
   Boxes,
@@ -67,6 +67,10 @@ const NPC_FILTER_PRESETS: Array<{
 ]
 
 const MIN_FEATURED_PROJECTED_RISE = 0.1
+const MIN_FEATURED_UNIT_PRICE = 10_000
+const INVESTMENT_WATCH_LIMIT = 10
+const OCCURRENCE_WATCH_LIMIT = 10
+const OCCURRENCE_DESCRIPTION_FALLBACK_LENGTH = 120
 
 type MarketSummary = {
   database_ready: boolean
@@ -253,6 +257,9 @@ type OccurrenceInvestmentItem = {
   storage_slot_value: number
   storage_efficiency_score: number
   occurrence_score: number
+  spread_percent: number
+  liquidity_score: number
+  market_context_score: number
   buy_volume: number
   sell_volume: number
   buy_orders: number
@@ -746,6 +753,14 @@ function App() {
   const [jobRuns, setJobRuns] = useState<JobRun[]>([])
   const [selectedNpcItemId, setSelectedNpcItemId] = useState<string | null>(null)
   const [selectedNpcDetail, setSelectedNpcDetail] = useState<NpcArbitrageDetail | null>(null)
+  const [selectedInvestmentItemId, setSelectedInvestmentItemId] = useState<string | null>(null)
+  const [expandedOccurrenceItemIds, setExpandedOccurrenceItemIds] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [clippedOccurrenceItemIds, setClippedOccurrenceItemIds] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const occurrenceDescriptionRefs = useRef<Map<string, HTMLParagraphElement>>(new Map())
   const [query, setQuery] = useState('')
   const [showNpcFilters, setShowNpcFilters] = useState(false)
   const [npcFilters, setNpcFilters] = useState<NpcFilterSettings>(() => loadNpcFilters())
@@ -778,8 +793,10 @@ function App() {
           await Promise.all([
           fetch(`${API_BASE_URL}/api/bazaar/summary`),
           fetch(`${API_BASE_URL}/api/bazaar/latest?limit=40`),
-          fetch(`${API_BASE_URL}/api/investments/momentum?limit=25`),
-          fetch(`${API_BASE_URL}/api/investments/occurrences?limit=5`),
+          fetch(
+            `${API_BASE_URL}/api/investments/momentum?limit=25&min_gain=0&min_rising_steps=1&min_unit_price=${MIN_FEATURED_UNIT_PRICE}`,
+          ),
+          fetch(`${API_BASE_URL}/api/investments/occurrences?limit=${OCCURRENCE_WATCH_LIMIT}`),
           fetch(`${API_BASE_URL}/api/signals/latest?limit=8`),
           fetch(`${API_BASE_URL}/api/backtests/summary`),
           fetch(`${API_BASE_URL}/api/backtests/results?limit=25`),
@@ -933,8 +950,12 @@ function App() {
 
   const rankedInvestments = useMemo(
     () =>
-      investmentItems
-        .filter((item) => item.projected_rise_percent >= MIN_FEATURED_PROJECTED_RISE)
+      [...investmentItems]
+        .filter(
+          (item) =>
+            item.latest_midpoint_price >= MIN_FEATURED_UNIT_PRICE &&
+            item.projected_rise_percent >= MIN_FEATURED_PROJECTED_RISE,
+        )
         .sort((left, right) => {
           const rightScore = scoreInvestmentRank(right)
           const leftScore = scoreInvestmentRank(left)
@@ -944,11 +965,17 @@ function App() {
           }
 
           return right.projected_profit_per_unit - left.projected_profit_per_unit
-        }),
+        })
+        .slice(0, INVESTMENT_WATCH_LIMIT),
     [investmentItems],
   )
 
   const featuredInvestment = rankedInvestments[0]
+  const selectedInvestment =
+    rankedInvestments.find((item) => item.item_id === selectedInvestmentItemId) ?? featuredInvestment
+  const risingInvestmentCount = investmentItems.filter(
+    (item) => item.projected_rise_percent >= MIN_FEATURED_PROJECTED_RISE,
+  ).length
   const featuredOccurrenceInvestment = occurrenceItems[0]
   const visibleBacktestResults = useMemo(
     () => backtestResults.filter((result) => result.signal_type !== 'NPC_FLIP'),
@@ -959,21 +986,7 @@ function App() {
     [backtestSummary],
   )
 
-  const filteredInvestments = useMemo(() => {
-    const cleanQuery = query.trim().toLowerCase()
-
-    if (!cleanQuery) {
-      return rankedInvestments.slice(0, 10)
-    }
-
-    return rankedInvestments
-      .filter(
-        (item) =>
-          item.item_name.toLowerCase().includes(cleanQuery) ||
-          item.item_id.toLowerCase().includes(cleanQuery),
-      )
-      .slice(0, 10)
-  }, [query, rankedInvestments])
+  const watchInvestments = rankedInvestments.slice(0, INVESTMENT_WATCH_LIMIT)
 
   const marketScore = featuredInvestment ? Math.min(scoreInvestmentItem(featuredInvestment), 99) : 0
   const bestNpcProfit = npcArbitrageItems[0]?.profit_per_item ?? 0
@@ -991,9 +1004,85 @@ function App() {
       .slice()
       .reverse()
       .map((row) => row.profit_per_item) ?? []
+  const selectedInvestmentChartValues = selectedInvestment
+    ? [
+        selectedInvestment.oldest_midpoint_price,
+        (selectedInvestment.oldest_midpoint_price + selectedInvestment.latest_midpoint_price) / 2,
+        selectedInvestment.latest_midpoint_price,
+        selectedInvestment.projected_target_price,
+      ]
+    : []
   const backtestWinRate = backtestSummary ? Math.round(backtestSummary.win_rate * 100) : 0
   const latestJob = jobRuns[0]
-  const investmentFitItems = rankedInvestments.slice(1, 4)
+  const investmentFitItems = rankedInvestments.slice(0, 3)
+  const occurrenceWatchItems = useMemo(
+    () => occurrenceItems.slice(0, OCCURRENCE_WATCH_LIMIT),
+    [occurrenceItems],
+  )
+  const toggleOccurrenceDescription = (itemId: string) => {
+    setExpandedOccurrenceItemIds((current) => {
+      const next = new Set(current)
+
+      if (next.has(itemId)) {
+        next.delete(itemId)
+      } else {
+        next.add(itemId)
+      }
+
+      return next
+    })
+  }
+
+  useEffect(() => {
+    if (activeView !== 'opportunities') {
+      return undefined
+    }
+
+    const measureDescriptions = () => {
+      setClippedOccurrenceItemIds((current) => {
+        const next = new Set<string>()
+
+        occurrenceWatchItems.forEach((item) => {
+          const node = occurrenceDescriptionRefs.current.get(item.item_id)
+
+          if (!node) {
+            return
+          }
+
+          if (expandedOccurrenceItemIds.has(item.item_id) && current.has(item.item_id)) {
+            next.add(item.item_id)
+            return
+          }
+
+          if (node.scrollHeight > node.clientHeight + 1) {
+            next.add(item.item_id)
+          }
+        })
+
+        if (next.size === current.size && [...next].every((itemId) => current.has(itemId))) {
+          return current
+        }
+
+        return next
+      })
+    }
+
+    const frameId = window.requestAnimationFrame(measureDescriptions)
+    let resizeObserver: ResizeObserver | null = null
+
+    if ('ResizeObserver' in window) {
+      resizeObserver = new ResizeObserver(measureDescriptions)
+      occurrenceDescriptionRefs.current.forEach((node) => resizeObserver?.observe(node))
+    }
+
+    window.addEventListener('resize', measureDescriptions)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.removeEventListener('resize', measureDescriptions)
+      resizeObserver?.disconnect()
+    }
+  }, [activeView, expandedOccurrenceItemIds, occurrenceWatchItems])
 
   return (
     <div className="dashboard">
@@ -1291,6 +1380,104 @@ function App() {
               )}
             </article>
 
+            <article className="panel opportunity-page-panel occurrence-watch-panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>top 10 occurrence investments</h2>
+                  <span>official update and event catalysts</span>
+                </div>
+                <span>{occurrenceWatchItems.length} ranked</span>
+              </div>
+
+              {occurrenceWatchItems.length > 0 ? (
+                <div className="occurrence-watch-list">
+                  {occurrenceWatchItems.map((item, index) => {
+                    const isExpanded = expandedOccurrenceItemIds.has(item.item_id)
+                    const canExpandDescription =
+                      clippedOccurrenceItemIds.has(item.item_id) ||
+                      item.thesis.length > OCCURRENCE_DESCRIPTION_FALLBACK_LENGTH
+
+                    return (
+                      <article
+                        className={
+                          isExpanded
+                            ? 'occurrence-watch-row expanded'
+                            : 'occurrence-watch-row'
+                        }
+                        key={item.item_id}
+                      >
+                        <span className="rank-number">{index + 1}</span>
+                        <ItemIcon item={item} />
+                        <div className="occurrence-watch-main">
+                          <div>
+                            <b>{item.item_name}</b>
+                            <span className="quality-badge stable">{item.catalyst_type}</span>
+                          </div>
+                          <small>{item.catalyst_summary}</small>
+                          <p
+                            ref={(node) => {
+                              if (node) {
+                                occurrenceDescriptionRefs.current.set(item.item_id, node)
+                              } else {
+                                occurrenceDescriptionRefs.current.delete(item.item_id)
+                              }
+                            }}
+                          >
+                            {item.thesis}
+                          </p>
+                          {canExpandDescription ? (
+                            <button
+                              className="description-dots-button"
+                              type="button"
+                              aria-expanded={isExpanded}
+                              aria-label={
+                                isExpanded
+                                  ? `Collapse ${item.item_name} catalyst description`
+                                  : `Expand ${item.item_name} catalyst description`
+                              }
+                              title={isExpanded ? 'Collapse' : 'Expand'}
+                              onClick={() => toggleOccurrenceDescription(item.item_id)}
+                            >
+                              ...
+                            </button>
+                          ) : null}
+                        </div>
+                        <div className="occurrence-watch-stats">
+                          <span>
+                            <b>{formatPercent(item.expected_impact)}</b>
+                            impact
+                          </span>
+                          <span>
+                            <b>{Math.round(item.confidence * 100)}%</b>
+                            confidence
+                          </span>
+                          <span>
+                            <b>{formatPercent(item.market_context_score)}</b>
+                            market
+                          </span>
+                          <span>
+                            <b>{formatCompact(item.latest_midpoint_price)}</b>
+                            price
+                          </span>
+                        </div>
+                        {item.source_url ? (
+                          <a className="source-link" href={item.source_url}>
+                            {item.source_label}
+                          </a>
+                        ) : (
+                          <span className="source-link">{item.source_label}</span>
+                        )}
+                      </article>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="empty-state">
+                  add trusted update, alpha, or creator catalysts to the curated occurrence list.
+                </p>
+              )}
+            </article>
+
             <aside className="opportunity-detail-column">
               <article className="panel compact-panel">
                 <div className="panel-heading">
@@ -1338,24 +1525,12 @@ function App() {
                           <span>{selectedNpcItem.item_id}</span>
                         </div>
                       </div>
-                      <div className="npc-detail-grid compact-npc-detail-grid">
+                      <div className="npc-detail-grid compact-npc-detail-grid compact-risk-grid">
                         <DetailMetric
                           label="trend"
                           value={getNpcTrend(selectedNpcDetail)}
                           hint="recent profit direction"
                           positive={getNpcTrend(selectedNpcDetail) === 'improving'}
-                        />
-                        <DetailMetric
-                          label="sell action"
-                          value={formatCompact(selectedNpcDetail.profit_per_sell_action)}
-                          hint={`${formatCompact(selectedNpcDetail.latest.profit_per_item)} each`}
-                          positive={selectedNpcDetail.latest.profit_per_item > 0}
-                        />
-                        <DetailMetric
-                          label="risk score"
-                          value={`${Math.round(selectedNpcDetail.risk_score * 100)} / 100`}
-                          hint={selectedNpcDetail.risk_label}
-                          positive={selectedNpcDetail.risk_score < 0.3}
                         />
                         <DetailMetric
                           label="consistency"
@@ -1370,24 +1545,26 @@ function App() {
                           positive={selectedNpcDetail.sell_depth_score >= 0.35}
                         />
                         <DetailMetric
-                          label="book balance"
-                          value={`${Math.round(selectedNpcDetail.volume_balance_score * 100)}%`}
-                          hint="buy/sell volume balance"
-                          positive={selectedNpcDetail.volume_balance_score >= 0.2}
-                        />
-                        <DetailMetric
-                          label="profit spike"
-                          value={`${selectedNpcDetail.profit_spike_ratio.toFixed(1)}x`}
-                          hint="latest vs recent average"
-                          positive={selectedNpcDetail.profit_spike_ratio < 1.75}
+                          label="price jump"
+                          value={formatPercent(selectedNpcDetail.max_recent_price_jump)}
+                          hint="largest recent move"
+                          positive={selectedNpcDetail.max_recent_price_jump < 0.25}
                         />
                       </div>
-                      <div className="history-table">
+                      {selectedNpcDetail.risk_reasons.length > 0 ? (
+                        <div className="risk-reason-list compact-risk-reasons" aria-label="risk reasons">
+                          {selectedNpcDetail.risk_reasons.slice(0, 2).map((reason) => (
+                            <span key={reason}>{reason}</span>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="history-table compact-history-table">
                         <MiniLineChart
+                          compact
                           label={`${selectedNpcItem.item_name} npc profit history`}
                           values={selectedNpcProfitChart}
                         />
-                        {selectedNpcDetail.history.slice(0, 5).map((row) => (
+                        {selectedNpcDetail.history.slice(0, 3).map((row) => (
                           <div className="history-row" key={row.collected_at}>
                             <span>{formatSnapshotTime(row.collected_at)}</span>
                             <b className={row.is_profitable ? 'positive' : ''}>
@@ -1477,53 +1654,62 @@ function App() {
 
               {isLoading ? (
                 <p className="empty-state">loading bazaar snapshot...</p>
-              ) : featuredInvestment ? (
+              ) : selectedInvestment ? (
                 <>
                   <div className="featured-strip">
                     <div className="featured-head compact-featured-head">
-                      <ItemIcon item={featuredInvestment} />
+                      <ItemIcon item={selectedInvestment} />
                       <div>
-                        <h3>{featuredInvestment.item_name}</h3>
-                        <p>{featuredInvestment.item_id}</p>
+                        <h3>{selectedInvestment.item_name}</h3>
+                        <p>{selectedInvestment.item_id}</p>
                       </div>
                     </div>
 
-                    <div className="featured-stat-row">
+                    <div className="investment-detail-chart">
+                      <MiniLineChart
+                        label={`${selectedInvestment.item_name} investment projection`}
+                        values={selectedInvestmentChartValues}
+                      />
+                      <div>
+                        <b>{formatCompact(selectedInvestment.projected_target_price)}</b>
+                        <span>projected target</span>
+                      </div>
+                    </div>
+
+                    <div className="featured-stat-row selected-investment-metrics">
                       <DetailMetric
-                        label="price"
-                        value={formatCompact(featuredInvestment.midpoint_price)}
-                        hint="bazaar midpoint"
+                        label="market fit"
+                        value={`${Math.round(selectedInvestment.market_quality_score * 100)}%`}
+                        hint="liquidity + spread"
+                        positive={selectedInvestment.market_quality_score >= 0.65}
                       />
                       <DetailMetric
-                        label="recent move"
-                        value={formatPercent(featuredInvestment.gain_percent)}
-                        hint={`${featuredInvestment.observed_snapshots} snapshots`}
-                        positive
+                        label="spread"
+                        value={formatPercent(selectedInvestment.spread_percent)}
+                        hint="buy/sell gap"
+                        positive={selectedInvestment.spread_percent < 0.2}
                       />
                       <DetailMetric
-                        label="potential rise"
-                        value={formatPercent(featuredInvestment.projected_rise_percent)}
-                        hint={getProjectionHint(featuredInvestment)}
-                        positive={featuredInvestment.projected_rise_percent > 0}
+                        label="slot value"
+                        value={formatCompact(selectedInvestment.storage_slot_value)}
+                        hint={`${selectedInvestment.estimated_stack_size} stack`}
+                        positive={selectedInvestment.storage_efficiency_score >= 80}
                       />
                       <DetailMetric
-                        label="profit/item"
-                        value={formatCompact(featuredInvestment.projected_profit_per_unit)}
-                        hint="price x potential rise"
-                        positive={featuredInvestment.projected_profit_per_unit > 0}
-                      />
-                      <DetailMetric
-                        label="confidence"
-                        value={<span className="score-badge">{Math.round(featuredInvestment.projection_confidence * 100)}</span>}
-                        hint="projection confidence"
-                        positive
+                        label="stability"
+                        value={`${Math.round(selectedInvestment.volatility_score * 100)}%`}
+                        hint={`${formatPercent(selectedInvestment.max_single_jump)} max jump`}
+                        positive={selectedInvestment.volatility_score >= 0.7}
                       />
                     </div>
                   </div>
 
                   <div className="table-section-heading">
                     <h3>items to watch</h3>
-                    <span>top 10 - 10%+ projected rise</span>
+                    <span>
+                      top {INVESTMENT_WATCH_LIMIT} -{' '}
+                      {risingInvestmentCount} above 10%
+                    </span>
                   </div>
 
                   <div className="opportunity-table">
@@ -1536,8 +1722,18 @@ function App() {
                       <span>profit/item</span>
                       <span>confidence</span>
                     </div>
-                    {filteredInvestments.length > 0 ? filteredInvestments.map((item, index) => (
-                      <div className="opportunity-row" key={item.item_id}>
+                    {watchInvestments.length > 0 ? watchInvestments.map((item, index) => (
+                      <button
+                        className={
+                          selectedInvestment?.item_id === item.item_id
+                            ? 'opportunity-row selected'
+                            : 'opportunity-row'
+                        }
+                        key={item.item_id}
+                        type="button"
+                        aria-pressed={selectedInvestment?.item_id === item.item_id}
+                        onClick={() => setSelectedInvestmentItemId(item.item_id)}
+                      >
                         <span>{index + 1}</span>
                         <span className="item-cell">
                           <ItemIcon item={item} />
@@ -1559,14 +1755,14 @@ function App() {
                         <span className="table-score">
                           <span>{Math.round(item.projection_confidence * 100)}%</span>
                         </span>
-                      </div>
+                      </button>
                     )) : (
-                      <p className="empty-state">collect more snapshots to rank investment candidates.</p>
+                      <p className="empty-state">no high-price 10%+ investment setups in the current snapshot.</p>
                     )}
                   </div>
                 </>
               ) : (
-                <p className="empty-state">collect more snapshots to find investment candidates.</p>
+                <p className="empty-state">no high-price 10%+ investment setups in the current snapshot.</p>
                 )}
             </article>
 
@@ -1648,7 +1844,7 @@ function App() {
                     <p className="empty-state">loading item history...</p>
                   ) : selectedNpcDetail ? (
                     <>
-                      <div className="npc-detail-grid">
+                      <div className="npc-detail-grid compact-risk-grid">
                         <DetailMetric
                           label="trend"
                           value={getNpcTrend(selectedNpcDetail)}
@@ -1662,28 +1858,10 @@ function App() {
                           positive={selectedNpcDetail.profit_consistency >= 0.75}
                         />
                         <DetailMetric
-                          label="sell action"
-                          value={formatCompact(selectedNpcDetail.profit_per_sell_action)}
-                          hint={`${formatCompact(selectedNpcDetail.latest.profit_per_item)} each - ${selectedNpcDetail.estimated_stack_size} stack`}
-                          positive={selectedNpcDetail.latest.profit_per_item > 0}
-                        />
-                        <DetailMetric
-                          label="risk score"
-                          value={`${Math.round(selectedNpcDetail.risk_score * 100)} / 100`}
-                          hint={selectedNpcDetail.risk_label}
-                          positive={selectedNpcDetail.risk_score < 0.3}
-                        />
-                        <DetailMetric
                           label="price jump"
                           value={formatPercent(selectedNpcDetail.max_recent_price_jump)}
                           hint="largest recent move"
                           positive={selectedNpcDetail.max_recent_price_jump < 0.25}
-                        />
-                        <DetailMetric
-                          label="spread"
-                          value={formatPercent(selectedNpcDetail.spread_percent)}
-                          hint={selectedNpcDetail.risk_reasons[0] ?? 'risk check'}
-                          positive={selectedNpcDetail.spread_percent < 0.2}
                         />
                         <DetailMetric
                           label="book depth"
@@ -1691,34 +1869,23 @@ function App() {
                           hint={`${formatCompact(selectedNpcDetail.min_sell_volume)} min sell volume`}
                           positive={selectedNpcDetail.sell_depth_score >= 0.35}
                         />
-                        <DetailMetric
-                          label="book balance"
-                          value={`${Math.round(selectedNpcDetail.volume_balance_score * 100)}%`}
-                          hint="buy/sell volume balance"
-                          positive={selectedNpcDetail.volume_balance_score >= 0.2}
-                        />
-                        <DetailMetric
-                          label="profit spike"
-                          value={`${selectedNpcDetail.profit_spike_ratio.toFixed(1)}x`}
-                          hint="latest vs recent average"
-                          positive={selectedNpcDetail.profit_spike_ratio < 1.75}
-                        />
                       </div>
 
                       {selectedNpcDetail.risk_reasons.length > 0 ? (
-                        <div className="risk-reason-list" aria-label="risk reasons">
-                          {selectedNpcDetail.risk_reasons.map((reason) => (
+                        <div className="risk-reason-list compact-risk-reasons" aria-label="risk reasons">
+                          {selectedNpcDetail.risk_reasons.slice(0, 3).map((reason) => (
                             <span key={reason}>{reason}</span>
                           ))}
                         </div>
                       ) : null}
 
-                      <div className="history-table">
+                      <div className="history-table compact-history-table">
                         <MiniLineChart
+                          compact
                           label={`${selectedNpcItem.item_name} npc profit history`}
                           values={selectedNpcProfitChart}
                         />
-                        {selectedNpcDetail.history.slice(0, 5).map((row) => (
+                        {selectedNpcDetail.history.slice(0, 3).map((row) => (
                           <div className="history-row" key={row.collected_at}>
                             <span>{formatSnapshotTime(row.collected_at)}</span>
                             <b className={row.is_profitable ? 'positive' : ''}>

@@ -226,6 +226,10 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertIn("risk_penalty_score", steady_rise)
         self.assertIn("spread_quality_score", steady_rise)
         self.assertIn("order_imbalance", steady_rise)
+        self.assertIn("forward_market_score", steady_rise)
+        self.assertIn("historical_comparison_score", steady_rise)
+        self.assertIn("catalyst_score", steady_rise)
+        self.assertEqual("forward market model", steady_rise["projection_basis"])
         self.assertEqual(64, steady_rise["estimated_stack_size"])
         self.assertGreaterEqual(steady_rise["storage_slot_value"], 5_000)
         self.assertIn("investment_score", steady_rise)
@@ -260,7 +264,7 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertEqual(0.0, item["projected_profit_per_unit"])
         self.assertLess(item["projected_target_price"], item["latest_midpoint_price"])
         self.assertGreater(item["projected_target_price"], 1_600_000.0)
-        self.assertEqual("craft-adjusted momentum", item["projection_basis"])
+        self.assertEqual("craft-adjusted forward model", item["projection_basis"])
         self.assertEqual(1_500_000.0, item["valuation_anchor_price"])
         self.assertGreater(item["craft_value_premium"], 0)
         self.assertLess(item["craft_value_premium"], 0.1)
@@ -289,7 +293,7 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertGreater(item["projected_target_price"], 1_600_000.0)
         self.assertGreater(item["projected_rise_percent"], 0)
         self.assertGreater(item["craft_value_premium"], 0.1)
-        self.assertEqual("craft-adjusted momentum", item["projection_basis"])
+        self.assertEqual("craft-adjusted forward model", item["projection_basis"])
 
     def test_market_quality_penalizes_wide_spread_and_imbalance(self) -> None:
         base_item = {

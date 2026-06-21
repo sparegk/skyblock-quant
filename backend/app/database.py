@@ -39,9 +39,9 @@ MOMENTUM_HISTORY_SNAPSHOTS = 5
 MIN_MOMENTUM_OBSERVED_SNAPSHOTS = 3
 MIN_MOMENTUM_VOLUME = 10_000
 MIN_MOMENTUM_ORDERS = 25
-MIN_MOMENTUM_GAIN = 0.03
+MIN_MOMENTUM_GAIN = 0.0
 MAX_MOMENTUM_SINGLE_JUMP = 0.35
-MIN_MOMENTUM_RISING_STEPS = 2
+MIN_MOMENTUM_RISING_STEPS = 1
 MIN_INVESTMENT_UNIT_PRICE = 50.0
 MIN_INVESTMENT_STACK_SIZE = 1
 MIN_INVESTMENT_SLOT_VALUE = 5_000.0
@@ -53,8 +53,23 @@ WIDE_INVESTMENT_SPREAD = 0.25
 MAX_CRAFT_VALUE_MOMENTUM_PREMIUM = 0.25
 INVESTMENT_LIQUIDITY_TARGET_VOLUME = 250_000.0
 INVESTMENT_DEPTH_TARGET_ORDERS = 300.0
+INVESTMENT_SCARCITY_TARGET_SELL_VOLUME = 250_000.0
+FORWARD_PROJECTION_BASE_RISE = 0.03
+FORWARD_PROJECTION_MARKET_WEIGHT = 0.18
+FORWARD_PROJECTION_COMPARISON_WEIGHT = 0.04
+FORWARD_PROJECTION_MAX_RISE = 0.50
 KNOWN_CRAFT_VALUE_RANGES = {
     "SHARD_ETHERDRAKE": (1_400_000.0, 1_600_000.0),
+}
+INVESTMENT_CATALYST_KEYWORDS = {
+    "SHARD": 0.08,
+    "GEM": 0.07,
+    "ENCHANTMENT": 0.07,
+    "FRAGMENT": 0.06,
+    "STAR": 0.06,
+    "RECOMBOBULATOR": 0.05,
+    "DYE": 0.05,
+    "PET": 0.04,
 }
 BACKTEST_HORIZONS = {
     "next_snapshot": None,
@@ -1164,23 +1179,31 @@ def clamp(value: float, minimum: float, maximum: float) -> float:
     return min(max(value, minimum), maximum)
 
 
+def estimate_investment_catalyst_score(item: dict[str, Any]) -> float:
+    """Return a forward-looking catalyst prior from item class and known use cases."""
+    item_id = str(item.get("item_id") or "").upper()
+    category = str(item.get("category") or "").upper()
+    tier = str(item.get("tier") or "").upper()
+
+    catalyst_score = 0.03
+    for keyword, score in INVESTMENT_CATALYST_KEYWORDS.items():
+        if keyword in item_id or keyword in category:
+            catalyst_score = max(catalyst_score, score)
+
+    if tier in {"EPIC", "LEGENDARY", "MYTHIC", "DIVINE", "SPECIAL", "VERY_SPECIAL"}:
+        catalyst_score = max(catalyst_score, 0.05)
+
+    if item_id in KNOWN_CRAFT_VALUE_RANGES:
+        catalyst_score = max(catalyst_score, 0.08)
+
+    return catalyst_score
+
+
 def add_investment_projection_fields(item: dict[str, Any]) -> dict[str, Any]:
-    """Estimate near-term upside from momentum, spread, and valuation anchors."""
+    """Estimate forward upside from current market structure and valuation anchors."""
     add_investment_storage_fields(item)
     observed_steps = max(item["observed_snapshots"] - 1, 1)
     trend_consistency = min(max(item["rising_steps"] / observed_steps, 0), 1)
-    trend_multiplier = 0.75 + trend_consistency * 0.5
-    liquidity_multiplier = min(
-        1.15,
-        0.85
-        + min(item["average_volume"] / 200_000, 1) * 0.2
-        + min(item["average_orders"] / 300, 1) * 0.1,
-    )
-    jump_penalty = max(0.55, 1 - item["max_single_jump"] * 1.5)
-    raw_projected_rise_percent = min(
-        0.5,
-        max(0, item["gain_percent"] * trend_multiplier * liquidity_multiplier * jump_penalty),
-    )
     midpoint_price = float(item["latest_midpoint_price"])
     buy_price = float(item.get("buy_price") or 0)
     sell_price = float(item.get("sell_price") or 0)
@@ -1222,6 +1245,25 @@ def add_investment_projection_fields(item: dict[str, Any]) -> dict[str, Any]:
     order_balance_score = 1 - order_imbalance
     volatility_score = clamp(1 - item["max_single_jump"] / 0.35, 0.0, 1.0)
     trend_quality_score = trend_consistency
+    current_volume = buy_volume + sell_volume
+    current_orders = buy_orders + sell_orders
+    current_liquidity_score = clamp(
+        current_volume / INVESTMENT_LIQUIDITY_TARGET_VOLUME,
+        0.0,
+        1.0,
+    )
+    current_depth_score = clamp(
+        current_orders / INVESTMENT_DEPTH_TARGET_ORDERS,
+        0.0,
+        1.0,
+    )
+    volume_pressure_score = clamp((buy_volume / max(sell_volume, 1) - 1) / 4, 0.0, 1.0)
+    order_pressure_score = clamp((buy_orders / max(sell_orders, 1) - 1) / 4, 0.0, 1.0)
+    scarcity_score = clamp(
+        1 - sell_volume / INVESTMENT_SCARCITY_TARGET_SELL_VOLUME,
+        0.0,
+        1.0,
+    )
     market_quality_score = (
         spread_quality_score * 0.22
         + liquidity_score * 0.18
@@ -1231,11 +1273,40 @@ def add_investment_projection_fields(item: dict[str, Any]) -> dict[str, Any]:
         + volatility_score * 0.14
         + trend_quality_score * 0.10
     )
-    market_quality_multiplier = 0.55 + market_quality_score * 0.55
-    momentum_target_price = midpoint_price * (
-        1 + raw_projected_rise_percent * spread_penalty * market_quality_multiplier
+    forward_market_score = (
+        current_liquidity_score * 0.25
+        + current_depth_score * 0.20
+        + volume_pressure_score * 0.20
+        + order_pressure_score * 0.15
+        + scarcity_score * 0.10
+        + spread_quality_score * 0.10
     )
-    projection_basis = "momentum"
+    historical_comparison_score = (
+        clamp(float(item["gain_percent"]) / 0.08, 0.0, 1.0) * 0.55
+        + trend_consistency * 0.30
+        + volatility_score * 0.15
+    )
+    catalyst_score = estimate_investment_catalyst_score(item)
+    raw_projected_rise_percent = clamp(
+        FORWARD_PROJECTION_BASE_RISE
+        + catalyst_score
+        + forward_market_score * FORWARD_PROJECTION_MARKET_WEIGHT
+        + historical_comparison_score * FORWARD_PROJECTION_COMPARISON_WEIGHT,
+        0.0,
+        FORWARD_PROJECTION_MAX_RISE,
+    )
+    spread_risk_adjustment = 1 - clamp(spread_percent, 0.0, 1.0) * 0.45
+    imbalance_risk_adjustment = 1 - order_imbalance * 0.15
+    volatility_risk_adjustment = 0.75 + volatility_score * 0.25
+    forward_risk_adjustment = clamp(
+        spread_risk_adjustment * imbalance_risk_adjustment * volatility_risk_adjustment,
+        0.35,
+        1.0,
+    )
+    forward_target_price = midpoint_price * (
+        1 + raw_projected_rise_percent * forward_risk_adjustment
+    )
+    projection_basis = "forward market model"
     valuation_anchor_price = None
     valuation_anchor_label = None
     valuation_warning = None
@@ -1248,24 +1319,22 @@ def add_investment_projection_fields(item: dict[str, Any]) -> dict[str, Any]:
         craft_value_premium = min(
             MAX_CRAFT_VALUE_MOMENTUM_PREMIUM,
             raw_projected_rise_percent
-            * (0.35 + trend_consistency * 0.35)
-            * spread_penalty
-            * market_quality_multiplier
-            * min(liquidity_multiplier, 1.1),
+            * (0.5 + forward_market_score * 0.35 + trend_consistency * 0.15)
+            * forward_risk_adjustment,
         )
         craft_target_cap = craft_high * (1 + craft_value_premium)
         valuation_anchor_price = craft_midpoint
         valuation_anchor_label = f"craft value {craft_low:,.0f}-{craft_high:,.0f}"
-        projection_basis = "craft-adjusted momentum"
+        projection_basis = "craft-adjusted forward model"
 
-        if momentum_target_price > craft_target_cap:
-            momentum_target_price = craft_target_cap
+        if forward_target_price > craft_target_cap:
+            forward_target_price = craft_target_cap
             valuation_warning = "target limited by craft-value premium"
 
         if midpoint_price >= craft_target_cap:
             valuation_warning = "market is already above craft-adjusted target"
 
-    projected_target_price = momentum_target_price
+    projected_target_price = forward_target_price
     projected_profit_per_unit = max(0.0, projected_target_price - midpoint_price)
     projected_rise_percent = (
         projected_profit_per_unit / midpoint_price if midpoint_price > 0 else 0.0
@@ -1285,6 +1354,10 @@ def add_investment_projection_fields(item: dict[str, Any]) -> dict[str, Any]:
     item["craft_value_premium"] = craft_value_premium
     item["spread_percent"] = spread_percent
     item["spread_penalty"] = spread_penalty
+    item["forward_market_score"] = forward_market_score
+    item["historical_comparison_score"] = historical_comparison_score
+    item["catalyst_score"] = catalyst_score
+    item["forward_risk_adjustment"] = forward_risk_adjustment
     item["market_quality_score"] = market_quality_score
     item["spread_quality_score"] = spread_quality_score
     item["liquidity_score"] = liquidity_score
@@ -1555,6 +1628,8 @@ def get_occurrence_investments(limit: int = 10) -> list[dict[str, Any]]:
                         COALESCE(items.item_name, snapshots.item_id) AS item_name,
                         items.category,
                         items.tier,
+                        snapshots.buy_price,
+                        snapshots.sell_price,
                         (snapshots.buy_price + snapshots.sell_price) / 2.0 AS latest_midpoint_price,
                         snapshots.buy_volume,
                         snapshots.sell_volume,
@@ -1612,12 +1687,58 @@ def get_occurrence_investments(limit: int = 10) -> list[dict[str, Any]]:
             "collected_at": market_item.get("collected_at"),
         }
         add_investment_storage_fields(item)
-        item["occurrence_score"] = (
-            item["confidence"]
-            * max(item["expected_impact"], 0)
-            * max(0.1, item["storage_efficiency_score"] / 100)
-            * 100
+        midpoint_price = float(item["latest_midpoint_price"] or 0)
+        buy_price = float(market_item.get("buy_price") or 0)
+        sell_price = float(market_item.get("sell_price") or 0)
+        buy_volume = float(item["buy_volume"] or 0)
+        sell_volume = float(item["sell_volume"] or 0)
+        buy_orders = float(item["buy_orders"] or 0)
+        sell_orders = float(item["sell_orders"] or 0)
+        spread_percent = (
+            abs(buy_price - sell_price) / midpoint_price
+            if midpoint_price > 0 and buy_price > 0 and sell_price > 0
+            else 1.0
         )
+        liquidity_score = clamp(
+            (buy_volume + sell_volume) / INVESTMENT_LIQUIDITY_TARGET_VOLUME,
+            0.0,
+            1.0,
+        )
+        depth_score = clamp(
+            (buy_orders + sell_orders) / INVESTMENT_DEPTH_TARGET_ORDERS,
+            0.0,
+            1.0,
+        )
+        spread_quality_score = clamp(1 - spread_percent / 0.35, 0.0, 1.0)
+        sell_scarcity_score = clamp(
+            1 - sell_volume / INVESTMENT_SCARCITY_TARGET_SELL_VOLUME,
+            0.0,
+            1.0,
+        )
+        buy_pressure_score = clamp((buy_volume / max(sell_volume, 1) - 1) / 4, 0.0, 1.0)
+        order_pressure_score = clamp((buy_orders / max(sell_orders, 1) - 1) / 4, 0.0, 1.0)
+        market_context_score = (
+            liquidity_score * 0.22
+            + depth_score * 0.18
+            + spread_quality_score * 0.18
+            + sell_scarcity_score * 0.14
+            + buy_pressure_score * 0.18
+            + order_pressure_score * 0.10
+        )
+        event_score = item["confidence"] * max(item["expected_impact"], 0)
+        item["occurrence_score"] = (
+            event_score * 55
+            + market_context_score * 35
+            + max(0.1, item["storage_efficiency_score"] / 100) * 10
+        )
+        item["spread_percent"] = spread_percent
+        item["liquidity_score"] = liquidity_score
+        item["depth_score"] = depth_score
+        item["spread_quality_score"] = spread_quality_score
+        item["sell_scarcity_score"] = sell_scarcity_score
+        item["buy_pressure_score"] = buy_pressure_score
+        item["order_pressure_score"] = order_pressure_score
+        item["market_context_score"] = market_context_score
         occurrence_items.append(item)
 
     occurrence_items.sort(

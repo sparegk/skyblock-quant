@@ -31,6 +31,27 @@ class ApiRouteTests(unittest.TestCase):
 
         refresh.assert_not_called()
 
+    def test_startup_collect_bazaar_can_be_disabled(self) -> None:
+        with (
+            patch.dict(
+                "os.environ",
+                {"SKYBLOCK_QUANT_COLLECT_BAZAAR_ON_STARTUP": "false"},
+            ),
+            patch("app.main.collect_bazaar_on_startup") as collect,
+        ):
+            main.startup_collect_bazaar_snapshot()
+
+        collect.assert_not_called()
+
+    def test_startup_collect_bazaar_runs_by_default(self) -> None:
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch("app.main.collect_bazaar_on_startup", return_value=100) as collect,
+        ):
+            main.startup_collect_bazaar_snapshot()
+
+        collect.assert_called_once_with()
+
     def test_npc_arbitrage_passes_filter_query_params(self) -> None:
         with patch("app.main.get_npc_arbitrage", return_value=[]) as get_npc_arbitrage:
             response = main.npc_arbitrage(

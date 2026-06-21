@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.collectors.bazaar_collector import collect_bazaar_snapshot
 from app.database import (
     BACKTEST_HORIZONS,
     MAX_NPC_ARBITRAGE_MARGIN,
@@ -39,8 +40,7 @@ from app.database import (
     get_top_spreads,
     search_items,
 )
-from app.settings import get_cors_origins
-from app.settings import get_bool_env
+from app.settings import get_bool_env, get_cors_origins, get_database_config, get_raw_dir
 
 
 app = FastAPI(title="SkyBlock Quant API")
@@ -65,6 +65,20 @@ def refresh_backtests_on_startup(limit: int = 1000) -> dict[str, int]:
         )
 
     return evaluated
+
+
+def collect_bazaar_on_startup() -> int:
+    """Collect one current Bazaar snapshot before the API serves market data."""
+    database_config = get_database_config()
+    return collect_bazaar_snapshot(database_config.sqlite_path, get_raw_dir())
+
+
+@app.on_event("startup")
+def startup_collect_bazaar_snapshot() -> None:
+    if not get_bool_env("SKYBLOCK_QUANT_COLLECT_BAZAAR_ON_STARTUP", True):
+        return
+
+    collect_bazaar_on_startup()
 
 
 @app.on_event("startup")

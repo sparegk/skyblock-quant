@@ -1,3 +1,134 @@
 {
-  "items": []
+  "items": [
+    {
+      "item_id": "SUMMONING_EYE",
+      "item_name": "Summoning Eye",
+      "catalyst_type": "year_500_event",
+      "catalyst_summary": "Year 500 Raffle tasks and global combat-facing buffs should pull broad activity into bosses, dragons, and high-participation grinds.",
+      "thesis": "The official Year 500 Alpha notes add a week-long Raffle of the Century with frequent tasks plus +50 Magic Find and +50 Tracking, making liquid boss-entry items worth watching even when short-term snapshot momentum is quiet.",
+      "source_label": "Hypixel Year 500 Alpha",
+      "source_url": "https://hypixel.net/threads/june-16-year-500-alpha-testing.6110804/",
+      "source_date": "2026-06-16",
+      "confidence": 0.76,
+      "expected_impact": 0.22,
+      "urgency": "pre-event watch"
+    },
+    {
+      "item_id": "SKELETON_KEY",
+      "item_name": "Skeleton Key",
+      "catalyst_type": "year_500_event",
+      "catalyst_summary": "Skeleton Key bundles appear in the announced Year 500 major reward pool, increasing attention around dungeon-access utility.",
+      "thesis": "A reward-pool listing can add supply risk, but major-event visibility plus dungeon XP buffs can lift demand around dungeon utility items. Treat as catalyst-sensitive rather than pure market momentum.",
+      "source_label": "Hypixel Year 500 Alpha",
+      "source_url": "https://hypixel.net/threads/june-16-year-500-alpha-testing.6110804/",
+      "source_date": "2026-06-16",
+      "confidence": 0.62,
+      "expected_impact": 0.12,
+      "urgency": "supply-risk watch"
+    },
+    {
+      "item_id": "RADIOACTIVE_VIAL",
+      "item_name": "Radioactive Vial",
+      "catalyst_type": "year_500_event",
+      "catalyst_summary": "The Year 500 reward pool highlights rare combat/slayer-adjacent drops while global Slayer XP is boosted.",
+      "thesis": "The announced +50% Slayer XP increases slayer participation during the event. Radioactive Vial is a liquid catalyst-sensitive item to watch where market depth supports entries.",
+      "source_label": "Hypixel Year 500 Alpha",
+      "source_url": "https://hypixel.net/threads/june-16-year-500-alpha-testing.6110804/",
+      "source_date": "2026-06-16",
+      "confidence": 0.68,
+      "expected_impact": 0.16,
+      "urgency": "event demand"
+    },
+    {
+      "item_id": "MAGMA_URCHIN",
+      "item_name": "Magma Urchin",
+      "catalyst_type": "year_500_event",
+      "catalyst_summary": "Magma Urchin bundles are part of the Year 500 medium reward pool, making supply and event attention relevant.",
+      "thesis": "This is not a blind bullish pick because added rewards can add supply. It stays in the occurrence list when current Bazaar pressure offsets supply risk.",
+      "source_label": "Hypixel Year 500 Alpha",
+      "source_url": "https://hypixel.net/threads/june-16-year-500-alpha-testing.6110804/",
+      "source_date": "2026-06-16",
+      "confidence": 0.58,
+      "expected_impact": 0.10,
+      "urgency": "supply-risk watch"
+    },
+    {
+      "item_id": "ALLIGATOR_SKIN",
+      "item_name": "Alligator Skin",
+      "catalyst_type": "lotus_atoll",
+      "catalyst_summary": "Lotus Atoll adds a new post-Bayou fishing island with Lotus sea creatures and progression.",
+      "thesis": "New-island progression tends to pull demand into local creature drops and fishing materials while players build out collections and upgrades.",
+      "source_label": "Hypixel 0.25 Lotus Atoll",
+      "source_url": "https://hypixel.net/threads/hypixel-skyblock-0-25-lotus-atoll.6100264/",
+      "source_date": "2026-05-26",
+      "confidence": 0.72,
+      "expected_impact": 0.20,
+      "urgency": "update demand"
+    },
+    {
+      "item_id": "SHARD_ALLIGATOR",
+      "item_name": "Alligator Shard",
+      "catalyst_type": "lotus_atoll",
+      "catalyst_summary": "Lotus Atoll progression and new fishing creatures keep shard demand relevant beyond raw snapshot momentum.",
+      "thesis": "Shard items often react to new creature/progression metas. Current liquidity decides whether the catalyst is tradable enough for the watch list.",
+      "source_label": "Hypixel 0.25 Lotus Atoll",
+      "source_url": "https://hypixel.net/threads/hypixel-skyblock-0-25-lotus-atoll.6100264/",
+      "source_date": "2026-05-26",
+      "confidence": 0.70,
+      "expected_impact": 0.18,
+      "urgency": "update demand"
+    },
+    {
+      "item_id": "ETHEREAL_VINE",
+      "item_name": "Ethereal Vine",
+      "catalyst_type": "lotus_atoll",
+      "catalyst_summary": "Lotus Atoll and modern fishing progression keep newer fishing materials in focus.",
+      "thesis": "This is a catalyst-material watch rather than a pure momentum pick. The occurrence score should rise only if current Bazaar depth and sell scarcity support the thesis.",
+      "source_label": "Hypixel 0.25 Lotus Atoll",
+      "source_url": "https://hypixel.net/threads/hypixel-skyblock-0-25-lotus-atoll.6100264/",
+      "source_date": "2026-05-26",
+      "confidence": 0.64,
+      "expected_impact": 0.14,
+      "urgency": "update demand"
+    },
+    {
+      "item_id": "BURROWING_SPORES",
+      "item_name": "Burrowing Spores",
+      "catalyst_type": "harvest_feast",
+      "catalyst_summary": "Harvest/Grand Feast changes affect farming activity and pest-driven rare crop flows.",
+      "thesis": "Official Harvest Feast changes increase event-specific farming activity. Reforge/farming materials can be mispriced when players focus only on short-term price snapshots.",
+      "source_label": "Hypixel Harvest Feast Changes",
+      "source_url": "https://hypixel.net/threads/may-14-harvest-feast-changes.6096831/",
+      "source_date": "2026-05-14",
+      "confidence": 0.66,
+      "expected_impact": 0.15,
+      "urgency": "event demand"
+    },
+    {
+      "item_id": "CROPIE",
+      "item_name": "Cropie",
+      "catalyst_type": "harvest_feast",
+      "catalyst_summary": "Harvest Feast creates farming-event attention and rare-crop turnover.",
+      "thesis": "Cropie is a high-activity farming material. The event can add both supply and demand, so current Bazaar pressure is used to decide whether it ranks in the top 10.",
+      "source_label": "Hypixel Harvest Feast Changes",
+      "source_url": "https://hypixel.net/threads/may-14-harvest-feast-changes.6096831/",
+      "source_date": "2026-05-14",
+      "confidence": 0.62,
+      "expected_impact": 0.12,
+      "urgency": "event cycle"
+    },
+    {
+      "item_id": "ENCHANTED_UMBER",
+      "item_name": "Enchanted Umber",
+      "catalyst_type": "fossil_essence",
+      "catalyst_summary": "Fossil Essence shop changes list Enchanted Umber as part of the updated mining reward economy.",
+      "thesis": "Fossil Essence shop changes and daily Fossil Muncher demand can change mining material turnover. This is ranked only when current market quality supports the official-update thesis.",
+      "source_label": "Hypixel 0.24.4 Harvest/Fossil",
+      "source_url": "https://hypixel.net/threads/hypixel-skyblock-0-24-4-harvest-feast-event-fossil-essence-shop-and-more.6089392/",
+      "source_date": "2026-04-28",
+      "confidence": 0.68,
+      "expected_impact": 0.16,
+      "urgency": "update demand"
+    }
+  ]
 }
