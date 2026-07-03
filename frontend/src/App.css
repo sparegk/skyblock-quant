@@ -314,6 +314,10 @@
 .detail-grid span,
 .table-head,
 .panel-heading span,
+.market-row small,
+.market-row .item-cell small,
+.leaderboard-row small,
+.alert-feed-row small,
 .opportunity-row small,
 .ranking-row small,
 .ranking-card small,
@@ -427,6 +431,35 @@
   min-height: 38px;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.market-row b,
+.ranking-card b,
+.insight-row b,
+.alert-row b,
+.job-run-row b,
+.backtest-result-row b,
+.breakdown-row b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.market-row small,
+.leaderboard-row small,
+.ranking-card small,
+.insight-row small,
+.alert-row small,
+.job-run-row small,
+.backtest-result-row small,
+.breakdown-row small {
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.market-row > span:not(:nth-child(2)),
+.forecast-table .opportunity-row > span:not(:nth-child(2)),
+.opportunity-page-table .arbitrage-row > span:not(:nth-child(2)) {
   font-variant-numeric: tabular-nums;
 }
 
@@ -1189,6 +1222,8 @@ button.opportunity-row:hover,
 }
 
 .item-cell > span:last-child {
+  display: grid;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -1196,7 +1231,17 @@ button.opportunity-row:hover,
 .item-cell small,
 .arbitrage-item-cell b,
 .arbitrage-item-cell small {
+  display: block;
   overflow-wrap: anywhere;
+}
+
+.market-row .item-cell b,
+.market-row .item-cell small,
+.forecast-table .item-cell b,
+.forecast-table .item-cell small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .item-cell .item-icon {
@@ -1805,6 +1850,18 @@ button.opportunity-row:hover,
   font-variant-numeric: tabular-nums;
   line-height: 1;
   padding: 0 8px;
+}
+
+.table-score.warning {
+  border-color: rgba(255, 180, 87, 0.42);
+  background: rgba(255, 180, 87, 0.1);
+  color: #ffb457;
+}
+
+.table-score.risk {
+  border-color: rgba(255, 99, 99, 0.4);
+  background: rgba(255, 99, 99, 0.1);
+  color: var(--red);
 }
 
 .forecast-panel {

@@ -611,6 +611,18 @@ function getSignalDotClass(signal: MarketSignal) {
   return 'alert-dot watch-dot'
 }
 
+function getSignalScoreClass(signal: MarketSignal) {
+  if (signal.severity === 'risk') {
+    return 'table-score risk'
+  }
+
+  if (signal.severity === 'watch') {
+    return 'table-score warning'
+  }
+
+  return 'table-score'
+}
+
 function getSignalShortText(signal: MarketSignal) {
   if (signal.expected_return !== null) {
     return `${formatPercent(signal.expected_return)} expected move`
@@ -2111,7 +2123,9 @@ function App() {
                       <small>{signal.item_name} / {signal.signal_type}</small>
                     </div>
                     <p>{signal.message}</p>
-                    <span className="table-score"><span>{Math.round(signal.confidence * 100)}%</span></span>
+                    <span className={getSignalScoreClass(signal)}>
+                      <span>{Math.round(signal.confidence * 100)}%</span>
+                    </span>
                   </article>
                 )) : (
                   <p className="empty-state">waiting for live signals.</p>
