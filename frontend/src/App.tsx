@@ -363,18 +363,71 @@ type MiniLineChartProps = {
   compact?: boolean
 }
 
-type ActiveView = 'home' | 'opportunities'
+type ActiveView =
+  | 'home'
+  | 'markets'
+  | 'opportunities'
+  | 'forecasts'
+  | 'rankings'
+  | 'research'
+  | 'alerts'
+  | 'settings'
 
 const navItems = [
   { label: 'home', icon: Home, view: 'home' },
-  { label: 'markets', icon: Boxes },
+  { label: 'markets', icon: Boxes, view: 'markets' },
   { label: 'opportunities', icon: Sparkles, view: 'opportunities' },
-  { label: 'forecasts', icon: LineChart },
-  { label: 'rankings', icon: Gauge },
-  { label: 'research', icon: FileText },
-  { label: 'alerts', icon: Bell, badge: '12' },
-  { label: 'settings', icon: Settings },
+  { label: 'forecasts', icon: LineChart, view: 'forecasts' },
+  { label: 'rankings', icon: Gauge, view: 'rankings' },
+  { label: 'research', icon: FileText, view: 'research' },
+  { label: 'alerts', icon: Bell, view: 'alerts' },
+  { label: 'settings', icon: Settings, view: 'settings' },
 ]
+
+const viewCopy: Record<ActiveView, { title: string; subtitle: string }> = {
+  home: {
+    title: 'home dashboard',
+    subtitle: 'a unified view of the hypixel skyblock economy.',
+  },
+  markets: {
+    title: 'markets',
+    subtitle: 'live Bazaar depth, spreads, and liquidity from the latest snapshot.',
+  },
+  opportunities: {
+    title: 'npc arbitrage opportunities',
+    subtitle: 'ranked Bazaar to NPC flips with liquidity, consistency, and risk checks.',
+  },
+  forecasts: {
+    title: 'forecasts',
+    subtitle: 'momentum projections, catalyst watches, and tested signal quality.',
+  },
+  rankings: {
+    title: 'rankings',
+    subtitle: 'current leaders across investments, NPC flips, catalysts, and tested signals.',
+  },
+  research: {
+    title: 'research',
+    subtitle: 'signal evidence, backtests, collector runs, and market notes.',
+  },
+  alerts: {
+    title: 'alerts',
+    subtitle: 'current market signals, warnings, and follow-up candidates.',
+  },
+  settings: {
+    title: 'settings',
+    subtitle: 'local API, data freshness, risk presets, and collector status.',
+  },
+}
+
+function getInitialActiveView(): ActiveView {
+  if (typeof window === 'undefined') {
+    return 'home'
+  }
+
+  const hashView = window.location.hash.replace('#', '') as ActiveView
+
+  return viewCopy[hashView] ? hashView : 'home'
+}
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat('en-US', {
@@ -629,6 +682,28 @@ function getMinecraftIconName(itemId: string) {
   return normalized
 }
 
+function getItemIconClass(itemId: string) {
+  const normalized = itemId.toLowerCase()
+
+  if (normalized.includes('diamond') || normalized.includes('ice')) {
+    return 'item-icon cyan'
+  }
+
+  if (normalized.includes('potato') || normalized.includes('sunflower') || normalized.includes('gold')) {
+    return 'item-icon gold'
+  }
+
+  if (normalized.includes('ember') || normalized.includes('crimson') || normalized.includes('magma')) {
+    return 'item-icon red'
+  }
+
+  if (normalized.includes('bottle') || normalized.includes('overclocker') || normalized.includes('recombobulator')) {
+    return 'item-icon violet'
+  }
+
+  return 'item-icon'
+}
+
 function ItemIcon({ item }: { item: { item_id: string } }) {
   const [failed, setFailed] = useState(false)
   const iconName = getMinecraftIconName(item.item_id)
@@ -639,7 +714,7 @@ function ItemIcon({ item }: { item: { item_id: string } }) {
     .join('')
 
   return (
-    <span className="item-icon">
+    <span className={getItemIconClass(item.item_id)}>
       {!failed ? (
         <img
           alt=""
@@ -741,9 +816,10 @@ function getSnapshotAgeMinutes(value: string | null) {
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<ActiveView>('home')
+  const [activeView, setActiveView] = useState<ActiveView>(() => getInitialActiveView())
   const [summary, setSummary] = useState<MarketSummary | null>(null)
   const [items, setItems] = useState<BazaarItem[]>([])
+  const [spreadItems, setSpreadItems] = useState<BazaarItem[]>([])
   const [npcArbitrageItems, setNpcArbitrageItems] = useState<NpcArbitrageItem[]>([])
   const [investmentItems, setInvestmentItems] = useState<InvestmentMomentumItem[]>([])
   const [occurrenceItems, setOccurrenceItems] = useState<OccurrenceInvestmentItem[]>([])
@@ -762,7 +838,7 @@ function App() {
   )
   const occurrenceDescriptionRefs = useRef<Map<string, HTMLParagraphElement>>(new Map())
   const [query, setQuery] = useState('')
-  const [showNpcFilters, setShowNpcFilters] = useState(false)
+  const [showNpcFilters, setShowNpcFilters] = useState(true)
   const [npcFilters, setNpcFilters] = useState<NpcFilterSettings>(() => loadNpcFilters())
   const debouncedNpcFilters = useDebouncedValue(npcFilters, 350)
   const [isLoading, setIsLoading] = useState(true)
@@ -775,6 +851,23 @@ function App() {
   }, [npcFilters])
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+
+    const nextHash = `#${activeView}`
+
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState(null, '', nextHash)
+    }
+
+    const handleHashChange = () => setActiveView(getInitialActiveView())
+    window.addEventListener('hashchange', handleHashChange)
+
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [activeView])
+
+  useEffect(() => {
     async function loadDashboardData() {
       try {
         setIsLoading(true)
@@ -783,6 +876,7 @@ function App() {
         const [
           summaryResponse,
           itemsResponse,
+          spreadsResponse,
           investmentResponse,
           occurrenceResponse,
           signalsResponse,
@@ -793,6 +887,7 @@ function App() {
           await Promise.all([
           fetch(`${API_BASE_URL}/api/bazaar/summary`),
           fetch(`${API_BASE_URL}/api/bazaar/latest?limit=40`),
+          fetch(`${API_BASE_URL}/api/bazaar/top-spreads?limit=40`),
           fetch(
             `${API_BASE_URL}/api/investments/momentum?limit=25&min_gain=0&min_rising_steps=1&min_unit_price=${MIN_FEATURED_UNIT_PRICE}`,
           ),
@@ -806,6 +901,7 @@ function App() {
         if (
           !summaryResponse.ok ||
           !itemsResponse.ok ||
+          !spreadsResponse.ok ||
           !investmentResponse.ok ||
           !occurrenceResponse.ok ||
           !signalsResponse.ok ||
@@ -818,6 +914,7 @@ function App() {
 
         const summaryData = (await summaryResponse.json()) as MarketSummary
         const itemsData = (await itemsResponse.json()) as { items: BazaarItem[] }
+        const spreadsData = (await spreadsResponse.json()) as { items: BazaarItem[] }
         const investmentData = (await investmentResponse.json()) as {
           items: InvestmentMomentumItem[]
         }
@@ -833,6 +930,7 @@ function App() {
 
         setSummary(summaryData)
         setItems(itemsData.items)
+        setSpreadItems(spreadsData.items)
         setInvestmentItems(investmentData.items)
         setOccurrenceItems(occurrenceData.items)
         setSignals(signalsData.signals)
@@ -880,7 +978,7 @@ function App() {
             return current
           }
 
-          return null
+          return data.items[0]?.item_id ?? null
         })
       } catch (loadError) {
         if (loadError instanceof DOMException && loadError.name === 'AbortError') {
@@ -985,8 +1083,59 @@ function App() {
     () => backtestSummary?.by_signal_type.filter((row) => row.signal_type !== 'NPC_FLIP') ?? [],
     [backtestSummary],
   )
+  const searchedMarketItems = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
+    const sourceItems = normalizedQuery ? items : spreadItems
+
+    return sourceItems
+      .filter((item) =>
+        normalizedQuery
+          ? item.item_id.toLowerCase().includes(normalizedQuery)
+          : true,
+      )
+      .slice(0, 18)
+  }, [items, query, spreadItems])
 
   const watchInvestments = rankedInvestments.slice(0, INVESTMENT_WATCH_LIMIT)
+  const topLiquidityItems = useMemo(
+    () =>
+      [...items]
+        .sort(
+          (left, right) =>
+            right.buy_volume + right.sell_volume - (left.buy_volume + left.sell_volume),
+        )
+        .slice(0, 10),
+    [items],
+  )
+  const rankingLeaders = [
+    ...rankedInvestments.slice(0, 4).map((item) => ({
+      key: `investment-${item.item_id}`,
+      type: 'investment',
+      itemId: item.item_id,
+      itemName: item.item_name,
+      value: formatCompact(item.projected_profit_per_unit),
+      hint: `${formatPercent(item.projected_rise_percent)} projected rise`,
+      score: Math.round(item.projection_confidence * 100),
+    })),
+    ...npcArbitrageItems.slice(0, 3).map((item) => ({
+      key: `npc-${item.item_id}`,
+      type: 'npc flip',
+      itemId: item.item_id,
+      itemName: item.item_name,
+      value: formatCompact(item.profit_per_sell_action),
+      hint: item.risk_label,
+      score: Math.round(item.profit_consistency * 100),
+    })),
+    ...occurrenceItems.slice(0, 3).map((item) => ({
+      key: `occurrence-${item.item_id}`,
+      type: 'catalyst',
+      itemId: item.item_id,
+      itemName: item.item_name,
+      value: formatPercent(item.expected_impact),
+      hint: item.catalyst_type,
+      score: Math.round(item.confidence * 100),
+    })),
+  ]
 
   const marketScore = featuredInvestment ? Math.min(scoreInvestmentItem(featuredInvestment), 99) : 0
   const bestNpcProfit = npcArbitrageItems[0]?.profit_per_item ?? 0
@@ -1096,23 +1245,19 @@ function App() {
           {navItems.map((item) => {
             const Icon = item.icon
             const isActive = item.view === activeView
-            const isEnabled = Boolean(item.view)
 
             return (
               <button
                 className={isActive ? 'nav-item active' : 'nav-item'}
-                disabled={!isEnabled}
                 key={item.label}
                 onClick={() => {
-                  if (item.view) {
-                    setActiveView(item.view as ActiveView)
-                  }
+                  setActiveView(item.view as ActiveView)
                 }}
                 type="button"
               >
                 <Icon size={18} />
                 <span>{item.label}</span>
-                {item.badge ? <em>{item.badge}</em> : null}
+                {item.view === 'alerts' && signals.length > 0 ? <em>{signals.length}</em> : null}
               </button>
             )
           })}
@@ -1150,13 +1295,21 @@ function App() {
               <ChevronDown size={15} />
             </button>
             <button
-              className={showNpcFilters ? 'active-filter-button' : ''}
+              className={activeView === 'opportunities' && showNpcFilters ? 'active-filter-button' : ''}
               type="button"
               aria-expanded={showNpcFilters}
-              onClick={() => setShowNpcFilters((current) => !current)}
+              onClick={() => {
+                if (activeView !== 'opportunities') {
+                  setActiveView('opportunities')
+                  setShowNpcFilters(true)
+                  return
+                }
+
+                setShowNpcFilters((current) => !current)
+              }}
             >
               <SlidersHorizontal size={17} />
-              filters
+              risk filters
             </button>
             <button className="icon-button" aria-label="notifications">
               <Bell size={18} />
@@ -1166,125 +1319,13 @@ function App() {
 
         <section className="title-row">
           <div>
-            <h1>{activeView === 'opportunities' ? 'npc arbitrage opportunities' : 'home dashboard'}</h1>
-            <p>
-              {activeView === 'opportunities'
-                ? 'ranked Bazaar to NPC flips with liquidity, consistency, and risk checks.'
-                : 'a unified view of the hypixel skyblock economy.'}
-            </p>
+            <h1>{viewCopy[activeView].title}</h1>
+            <p>{viewCopy[activeView].subtitle}</p>
           </div>
           <span className={error ? 'connection offline' : 'connection'}>
             {error ? error : 'backend connected'}
           </span>
         </section>
-
-        {showNpcFilters ? (
-          <section className="filter-panel" aria-label="Bazaar to NPC flip risk filters">
-            <div className="filter-presets" aria-label="Bazaar to NPC flip filter presets">
-              {NPC_FILTER_PRESETS.map((preset) => (
-                <button
-                  className={npcFiltersMatch(npcFilters, preset.value) ? 'active-preset' : ''}
-                  type="button"
-                  key={preset.label}
-                  onClick={() => setNpcFilters(preset.value)}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-            <label>
-              <span>min volume</span>
-              <input
-                type="number"
-                min="0"
-                step="1000"
-                value={npcFilters.minSellVolume}
-                onChange={(event) =>
-                  setNpcFilters((current) =>
-                    sanitizeNpcFilters({
-                      ...current,
-                      minSellVolume: Number(event.target.value),
-                    }),
-                  )
-                }
-              />
-            </label>
-            <label>
-              <span>min orders</span>
-              <input
-                type="number"
-                min="0"
-                step="5"
-                value={npcFilters.minSellOrders}
-                onChange={(event) =>
-                  setNpcFilters((current) =>
-                    sanitizeNpcFilters({
-                      ...current,
-                      minSellOrders: Number(event.target.value),
-                    }),
-                  )
-                }
-              />
-            </label>
-            <label>
-              <span>max margin</span>
-              <input
-                type="number"
-                min="0.01"
-                max="10"
-                step="0.01"
-                value={npcFilters.maxProfitMargin}
-                onChange={(event) =>
-                  setNpcFilters((current) =>
-                    sanitizeNpcFilters({
-                      ...current,
-                      maxProfitMargin: Number(event.target.value),
-                    }),
-                  )
-                }
-              />
-            </label>
-            <label>
-              <span>history</span>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                step="1"
-                value={npcFilters.historySnapshots}
-                onChange={(event) =>
-                  setNpcFilters((current) =>
-                    sanitizeNpcFilters({
-                      ...current,
-                      historySnapshots: Number(event.target.value),
-                    }),
-                  )
-                }
-              />
-            </label>
-            <label>
-              <span>profitable</span>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                step="1"
-                value={npcFilters.minProfitableSnapshots}
-                onChange={(event) =>
-                  setNpcFilters((current) =>
-                    sanitizeNpcFilters({
-                      ...current,
-                      minProfitableSnapshots: Number(event.target.value),
-                    }),
-                  )
-                }
-              />
-            </label>
-            <button type="button" onClick={() => setNpcFilters(DEFAULT_NPC_FILTERS)}>
-              reset
-            </button>
-          </section>
-        ) : null}
 
         {activeView === 'opportunities' ? (
           <section className="opportunity-page-grid">
@@ -1484,6 +1525,7 @@ function App() {
                   <h2>risk filters</h2>
                   <span>{npcFiltersMatch(npcFilters, DEFAULT_NPC_FILTERS) ? 'balanced' : 'custom'}</span>
                 </div>
+
                 <div className="filter-presets compact-filter-presets">
                   {NPC_FILTER_PRESETS.map((preset) => (
                     <button
@@ -1496,9 +1538,123 @@ function App() {
                     </button>
                   ))}
                 </div>
-                <button className="secondary-action" type="button" onClick={() => setShowNpcFilters((current) => !current)}>
-                  {showNpcFilters ? 'hide advanced filters' : 'show advanced filters'}
-                </button>
+
+                {showNpcFilters ? (
+                  <div className="risk-filter-grid" aria-label="Bazaar to NPC flip risk filters">
+                    <label>
+                      <span>volume</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={npcFilters.minSellVolume}
+                        onChange={(event) =>
+                          setNpcFilters((current) =>
+                            sanitizeNpcFilters({
+                              ...current,
+                              minSellVolume: Number(event.target.value),
+                            }),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>orders</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="5"
+                        value={npcFilters.minSellOrders}
+                        onChange={(event) =>
+                          setNpcFilters((current) =>
+                            sanitizeNpcFilters({
+                              ...current,
+                              minSellOrders: Number(event.target.value),
+                            }),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>margin</span>
+                      <input
+                        type="number"
+                        min="0.01"
+                        max="10"
+                        step="0.01"
+                        value={npcFilters.maxProfitMargin}
+                        onChange={(event) =>
+                          setNpcFilters((current) =>
+                            sanitizeNpcFilters({
+                              ...current,
+                              maxProfitMargin: Number(event.target.value),
+                            }),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>history</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        step="1"
+                        value={npcFilters.historySnapshots}
+                        onChange={(event) =>
+                          setNpcFilters((current) =>
+                            sanitizeNpcFilters({
+                              ...current,
+                              historySnapshots: Number(event.target.value),
+                            }),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>profitable</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        step="1"
+                        value={npcFilters.minProfitableSnapshots}
+                        onChange={(event) =>
+                          setNpcFilters((current) =>
+                            sanitizeNpcFilters({
+                              ...current,
+                              minProfitableSnapshots: Number(event.target.value),
+                            }),
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <div className="risk-filter-summary" aria-label="current Bazaar to NPC flip filters">
+                    <span>
+                      <b>{formatCompact(npcFilters.minSellVolume)}</b>
+                      min volume
+                    </span>
+                    <span>
+                      <b>{formatNumber(npcFilters.minSellOrders)}</b>
+                      min orders
+                    </span>
+                    <span>
+                      <b>{formatPercent(npcFilters.maxProfitMargin)}</b>
+                      max margin
+                    </span>
+                  </div>
+                )}
+
+                <div className="risk-filter-actions">
+                  <button className="secondary-action" type="button" onClick={() => setShowNpcFilters((current) => !current)}>
+                    {showNpcFilters ? 'compact view' : 'edit filters'}
+                  </button>
+                  <button className="secondary-action" type="button" onClick={() => setNpcFilters(DEFAULT_NPC_FILTERS)}>
+                    reset
+                  </button>
+                </div>
               </article>
 
               <article className="panel compact-panel">
@@ -1581,6 +1737,478 @@ function App() {
                   )
                 ) : (
                   <p className="empty-state">select a flip to inspect history and risk.</p>
+                )}
+              </article>
+            </aside>
+          </section>
+        ) : activeView === 'markets' ? (
+          <section className="page-grid">
+            <article className="panel page-main-panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>live bazaar board</h2>
+                  <span>{query.trim() ? 'search results' : 'highest current spreads'}</span>
+                </div>
+                <span>{formatSnapshotTime(summary?.latest_snapshot ?? null)}</span>
+              </div>
+              <div className="npc-summary-grid compact-summary-grid">
+                <DetailMetric
+                  label="tracked"
+                  value={summary ? formatCompact(summary.tracked_products) : 'n/a'}
+                  hint="products"
+                  positive={Boolean(summary?.database_ready)}
+                />
+                <DetailMetric
+                  label="rows"
+                  value={summary ? formatCompact(summary.total_rows) : 'n/a'}
+                  hint="historical snapshots"
+                />
+                <DetailMetric
+                  label="gap max"
+                  value={spreadItems[0] ? formatCompact(spreadItems[0].spread) : 'n/a'}
+                  hint={spreadItems[0] ? formatItemName(spreadItems[0].item_id) : 'waiting'}
+                  positive={Boolean(spreadItems[0])}
+                />
+                <DetailMetric
+                  label="liquid rows"
+                  value={topLiquidityItems.length}
+                  hint="ranked by volume"
+                  positive
+                />
+              </div>
+              <div className="market-table">
+                <div className="market-row table-head">
+                  <span>#</span>
+                  <span>item</span>
+                  <span>buy</span>
+                  <span>sell</span>
+                  <span>coin gap</span>
+                  <span>volume</span>
+                  <span>orders</span>
+                </div>
+                {searchedMarketItems.map((item, index) => (
+                  <div className="market-row" key={item.item_id}>
+                    <span>{index + 1}</span>
+                    <span className="item-cell">
+                      <ItemIcon item={item} />
+                      <span>
+                        <b>{formatItemName(item.item_id)}</b>
+                        <small>{item.item_id}</small>
+                      </span>
+                    </span>
+                    <span>{formatCompact(item.buy_price)}</span>
+                    <span>{formatCompact(item.sell_price)}</span>
+                    <span className="positive">{formatCompact(item.spread)}</span>
+                    <span>{formatCompact(item.buy_volume + item.sell_volume)}</span>
+                    <span>{formatCompact(item.buy_orders + item.sell_orders)}</span>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <aside className="page-side-column">
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>liquidity leaders</h2>
+                  <span>depth</span>
+                </div>
+                {topLiquidityItems.slice(0, 8).map((item, index) => (
+                  <div className="ranking-card" key={item.item_id}>
+                    <span className="rank-number">{index + 1}</span>
+                    <div>
+                      <b>{formatItemName(item.item_id)}</b>
+                      <small>{formatCompact(item.buy_volume + item.sell_volume)} total volume</small>
+                    </div>
+                    <span className="table-score">
+                      <span>{formatCompact(item.buy_orders + item.sell_orders)}</span>
+                    </span>
+                  </div>
+                ))}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>spread watch</h2>
+                  <span>wide books</span>
+                </div>
+                {spreadItems.slice(0, 6).map((item) => (
+                  <div className="alert-row" key={item.item_id}>
+                    <span className="alert-dot watch-dot" />
+                    <div>
+                      <b>{formatItemName(item.item_id)}</b>
+                      <small>{formatCompact(item.spread)} gap / {formatCompact(item.sell_volume)} sell volume</small>
+                    </div>
+                  </div>
+                ))}
+              </article>
+            </aside>
+          </section>
+        ) : activeView === 'forecasts' ? (
+          <section className="page-grid">
+            <article className="panel page-main-panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>momentum forecast board</h2>
+                  <span>{rankedInvestments.length} qualified projected setups</span>
+                </div>
+                <span>{formatSnapshotTime(summary?.latest_snapshot ?? null)}</span>
+              </div>
+              <div className="forecast-split">
+                <div className="sparkline">
+                  <MiniLineChart label="forecast strength curve" values={forecastChartValues} />
+                </div>
+                <div className="npc-summary-grid compact-summary-grid">
+                  <DetailMetric
+                    label="top climb"
+                    value={featuredInvestment ? formatPercent(featuredInvestment.gain_percent) : 'n/a'}
+                    hint={featuredInvestment?.item_name ?? 'waiting'}
+                    positive={Boolean(featuredInvestment)}
+                  />
+                  <DetailMetric
+                    label="projection"
+                    value={featuredInvestment ? formatPercent(featuredInvestment.projected_rise_percent) : 'n/a'}
+                    hint="best current rise"
+                    positive
+                  />
+                  <DetailMetric
+                    label="hit rate"
+                    value={backtestSummary?.total_results ? `${backtestWinRate}%` : 'n/a'}
+                    hint="tested signals"
+                    positive={backtestSummary ? backtestSummary.win_rate >= 0.5 : false}
+                  />
+                  <DetailMetric
+                    label="catalysts"
+                    value={occurrenceItems.length}
+                    hint="event watches"
+                    positive
+                  />
+                </div>
+              </div>
+              <div className="opportunity-table forecast-table">
+                <div className="opportunity-row table-head">
+                  <span>#</span>
+                  <span>item</span>
+                  <span>now</span>
+                  <span>target</span>
+                  <span>rise</span>
+                  <span>confidence</span>
+                  <span>quality</span>
+                </div>
+                {rankedInvestments.slice(0, 12).map((item, index) => (
+                  <button
+                    className={selectedInvestment?.item_id === item.item_id ? 'opportunity-row selected' : 'opportunity-row'}
+                    key={item.item_id}
+                    type="button"
+                    onClick={() => setSelectedInvestmentItemId(item.item_id)}
+                  >
+                    <span>{index + 1}</span>
+                    <span className="item-cell">
+                      <ItemIcon item={item} />
+                      <span>
+                        <b>{item.item_name}</b>
+                        <small>{getProjectionHint(item)}</small>
+                      </span>
+                    </span>
+                    <span>{formatCompact(item.latest_midpoint_price)}</span>
+                    <span>{formatCompact(item.projected_target_price)}</span>
+                    <span className="positive">{formatPercent(item.projected_rise_percent)}</span>
+                    <span className="table-score"><span>{Math.round(item.projection_confidence * 100)}%</span></span>
+                    <span>{Math.round(item.market_quality_score * 100)}%</span>
+                  </button>
+                ))}
+              </div>
+            </article>
+
+            <aside className="page-side-column">
+              <article className="panel occurrence-panel">
+                <div className="panel-heading">
+                  <h2>catalyst forecast</h2>
+                  <span>event driven</span>
+                </div>
+                {featuredOccurrenceInvestment ? (
+                  <>
+                    <div className="occurrence-feature">
+                      <span className="quality-badge stable">{featuredOccurrenceInvestment.catalyst_type}</span>
+                      <h3>{featuredOccurrenceInvestment.item_name}</h3>
+                      <p>{featuredOccurrenceInvestment.catalyst_summary}</p>
+                    </div>
+                    <div className="occurrence-metrics">
+                      <DetailMetric label="impact" value={formatPercent(featuredOccurrenceInvestment.expected_impact)} hint={featuredOccurrenceInvestment.urgency} positive />
+                      <DetailMetric label="confidence" value={`${Math.round(featuredOccurrenceInvestment.confidence * 100)}%`} hint={featuredOccurrenceInvestment.source_label} positive />
+                      <DetailMetric label="market" value={formatPercent(featuredOccurrenceInvestment.market_context_score)} hint="context fit" positive />
+                    </div>
+                  </>
+                ) : (
+                  <p className="empty-state">waiting for catalyst watches.</p>
+                )}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>signal quality</h2>
+                  <span>backtested</span>
+                </div>
+                {visibleBacktestSignalBreakdowns.slice(0, 5).map((row) => (
+                  <div className="breakdown-row" key={row.signal_type}>
+                    <span>{row.signal_type}</span>
+                    <b>{Math.round(row.win_rate * 100)}%</b>
+                    <small>{formatPercent(row.average_return)} average return</small>
+                  </div>
+                ))}
+              </article>
+            </aside>
+          </section>
+        ) : activeView === 'rankings' ? (
+          <section className="page-grid">
+            <article className="panel page-main-panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>cross-market rankings</h2>
+                  <span>investments, flips, catalysts, and tested ideas</span>
+                </div>
+                <span>{rankingLeaders.length} leaders</span>
+              </div>
+              <div className="leaderboard-list">
+                {rankingLeaders.map((item, index) => (
+                  <article className="leaderboard-row" key={item.key}>
+                    <span className="rank-number">{index + 1}</span>
+                    <ItemIcon item={{ item_id: item.itemId }} />
+                    <div>
+                      <b>{item.itemName}</b>
+                      <small>{item.type} / {item.hint}</small>
+                    </div>
+                    <strong>{item.value}</strong>
+                    <span className="table-score"><span>{item.score}%</span></span>
+                  </article>
+                ))}
+              </div>
+            </article>
+
+            <aside className="page-side-column">
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>best investments</h2>
+                  <span>profit/unit</span>
+                </div>
+                {rankedInvestments.slice(0, 6).map((item, index) => (
+                  <div className="ranking-card" key={item.item_id}>
+                    <span className="rank-number">{index + 1}</span>
+                    <div>
+                      <b>{item.item_name}</b>
+                      <small>{formatPercent(item.projected_rise_percent)} projected</small>
+                    </div>
+                    <span className="table-score"><span>{formatCompact(item.projected_profit_per_unit)}</span></span>
+                  </div>
+                ))}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>best flips</h2>
+                  <span>sell action</span>
+                </div>
+                {npcArbitrageItems.slice(0, 6).map((item, index) => (
+                  <div className="ranking-card" key={item.item_id}>
+                    <span className="rank-number">{index + 1}</span>
+                    <div>
+                      <b>{item.item_name}</b>
+                      <small>{item.risk_label}</small>
+                    </div>
+                    <span className="table-score"><span>{formatCompact(item.profit_per_sell_action)}</span></span>
+                  </div>
+                ))}
+              </article>
+            </aside>
+          </section>
+        ) : activeView === 'research' ? (
+          <section className="page-grid">
+            <article className="panel page-main-panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>research notebook</h2>
+                  <span>latest signal evidence and backtest readouts</span>
+                </div>
+                <span>{backtestSummary?.latest_evaluated_at ? formatSnapshotTime(backtestSummary.latest_evaluated_at) : 'not evaluated'}</span>
+              </div>
+              {backtestSummary && backtestSummary.total_results > 0 ? (
+                <>
+                  <div className="backtest-summary-grid research-summary-grid">
+                    <DetailMetric label="win rate" value={`${backtestWinRate}%`} hint={`${backtestSummary.successful_results} successful`} positive={backtestSummary.win_rate >= 0.5} />
+                    <DetailMetric label="avg return" value={formatPercent(backtestSummary.average_return)} hint="all evaluated signals" positive={backtestSummary.average_return >= 0} />
+                    <DetailMetric label="projection hit" value={backtestSummary.projection_results ? `${Math.round(backtestSummary.projection_hit_rate * 100)}%` : 'n/a'} hint={`${backtestSummary.projection_results} projected`} positive={backtestSummary.projection_hit_rate >= 0.5} />
+                    <DetailMetric label="pending" value={formatCompact(backtestSummary.pending_evaluations)} hint={`${backtestSummary.total_signals} tracked`} positive={backtestSummary.pending_evaluations === 0} />
+                  </div>
+                  <div className="backtest-result-list">
+                    {visibleBacktestResults.slice(0, 10).map((result) => (
+                      <div className="backtest-result-row" key={result.id}>
+                        <span className={result.was_successful ? 'alert-dot positive-dot' : 'alert-dot risk-dot'} />
+                        <div>
+                          <b>{result.item_name}</b>
+                          <small>{result.title} / {result.horizon}</small>
+                        </div>
+                        <strong className={result.return_percent >= 0 ? 'return-positive' : 'return-negative'}>
+                          {formatPercent(result.return_percent)}
+                        </strong>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="empty-state">run backtest evaluation after signals have future snapshots.</p>
+              )}
+            </article>
+
+            <aside className="page-side-column">
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>collector runs</h2>
+                  <span>{jobRuns.length} recent</span>
+                </div>
+                {jobRuns.slice(0, 5).map((job) => (
+                  <div className="job-run-row" key={job.id}>
+                    <span className={getJobStatusClass(job.status)}>{job.status}</span>
+                    <div>
+                      <b>{formatSnapshotTime(job.started_at)}</b>
+                      <small>{job.message ?? job.job_type}</small>
+                    </div>
+                  </div>
+                ))}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>research notes</h2>
+                  <span>current model</span>
+                </div>
+                {signals.slice(0, 5).map((signal) => (
+                  <div className="insight-row" key={signal.id}>
+                    <FileText size={16} />
+                    <div>
+                      <b>{signal.title}</b>
+                      <small>{signal.item_name} / {getSignalShortText(signal)}</small>
+                    </div>
+                  </div>
+                ))}
+              </article>
+            </aside>
+          </section>
+        ) : activeView === 'alerts' ? (
+          <section className="page-grid">
+            <article className="panel page-main-panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>active alert feed</h2>
+                  <span>generated market signals from the latest model run</span>
+                </div>
+                <span>{signals.length} signals</span>
+              </div>
+              <div className="alert-feed-list">
+                {signals.length > 0 ? signals.map((signal) => (
+                  <article className="alert-feed-row" key={signal.id}>
+                    <span className={getSignalDotClass(signal)} />
+                    <div>
+                      <b>{signal.title}</b>
+                      <small>{signal.item_name} / {signal.signal_type}</small>
+                    </div>
+                    <p>{signal.message}</p>
+                    <span className="table-score"><span>{Math.round(signal.confidence * 100)}%</span></span>
+                  </article>
+                )) : (
+                  <p className="empty-state">waiting for live signals.</p>
+                )}
+              </div>
+            </article>
+
+            <aside className="page-side-column">
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>risk queue</h2>
+                  <span>warnings</span>
+                </div>
+                {signals.filter((signal) => signal.severity === 'risk').slice(0, 6).map((signal) => (
+                  <div className="alert-row" key={signal.id}>
+                    <span className="alert-dot risk-dot" />
+                    <div>
+                      <b>{signal.item_name}</b>
+                      <small>{signal.title}</small>
+                    </div>
+                  </div>
+                ))}
+                {signals.filter((signal) => signal.severity === 'risk').length === 0 ? (
+                  <p className="empty-state">no risk alerts in the current feed.</p>
+                ) : null}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>watch queue</h2>
+                  <span>positive + watch</span>
+                </div>
+                {signals.filter((signal) => signal.severity !== 'risk').slice(0, 6).map((signal) => (
+                  <div className="alert-row" key={signal.id}>
+                    <span className={getSignalDotClass(signal)} />
+                    <div>
+                      <b>{signal.item_name}</b>
+                      <small>{getSignalShortText(signal)}</small>
+                    </div>
+                  </div>
+                ))}
+              </article>
+            </aside>
+          </section>
+        ) : activeView === 'settings' ? (
+          <section className="page-grid">
+            <article className="panel page-main-panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>runtime settings</h2>
+                  <span>local API and market model status</span>
+                </div>
+                <span className={error ? 'quality-badge risk' : 'quality-badge stable'}>
+                  {error ? 'offline' : 'online'}
+                </span>
+              </div>
+              <div className="settings-grid">
+                <DetailMetric label="api base" value="127.0.0.1" hint={API_BASE_URL} positive={!error} />
+                <DetailMetric label="database" value={summary?.database_ready ? 'ready' : 'waiting'} hint={`${formatCompact(summary?.tracked_products ?? 0)} products`} positive={Boolean(summary?.database_ready)} />
+                <DetailMetric label="snapshot" value={formatSnapshotTime(summary?.latest_snapshot ?? null)} hint={isSnapshotStale ? 'stale' : 'fresh enough'} positive={!isSnapshotStale} />
+                <DetailMetric label="signals" value={signals.length} hint="latest feed" positive={signals.length > 0} />
+                <DetailMetric label="jobs" value={jobRuns.length} hint={latestJob?.status ?? 'no runs'} positive={latestJob?.status === 'success'} />
+                <DetailMetric label="backtests" value={backtestSummary ? formatCompact(backtestSummary.total_results) : 'n/a'} hint="evaluated results" positive={Boolean(backtestSummary?.total_results)} />
+              </div>
+            </article>
+
+            <aside className="page-side-column">
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>npc risk defaults</h2>
+                  <span>{npcFiltersMatch(npcFilters, DEFAULT_NPC_FILTERS) ? 'balanced' : 'custom'}</span>
+                </div>
+                <div className="risk-filter-summary">
+                  <span><b>{formatCompact(npcFilters.minSellVolume)}</b>volume</span>
+                  <span><b>{formatNumber(npcFilters.minSellOrders)}</b>orders</span>
+                  <span><b>{formatPercent(npcFilters.maxProfitMargin)}</b>margin</span>
+                </div>
+                <button className="secondary-action" type="button" onClick={() => setNpcFilters(DEFAULT_NPC_FILTERS)}>
+                  reset to balanced
+                </button>
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>latest job</h2>
+                  {latestJob ? <span className={getJobStatusClass(latestJob.status)}>{latestJob.status}</span> : <span>none</span>}
+                </div>
+                {latestJob ? (
+                  <div className="job-run-row">
+                    <span className={getJobStatusClass(latestJob.status)}>{latestJob.status}</span>
+                    <div>
+                      <b>{formatSnapshotTime(latestJob.started_at)}</b>
+                      <small>{latestJob.message ?? latestJob.job_type}</small>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="empty-state">no collector runs yet.</p>
                 )}
               </article>
             </aside>
