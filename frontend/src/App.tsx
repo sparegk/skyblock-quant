@@ -21,6 +21,8 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000
 type NpcFilterSettings = {
   minSellVolume: number
   minSellOrders: number
+  minActionProfit: number
+  maxRiskScore: number
   maxProfitMargin: number
   historySnapshots: number
   minProfitableSnapshots: number
@@ -31,6 +33,8 @@ const NPC_FILTER_STORAGE_KEY = 'skyblock-quant:npc-filters'
 const DEFAULT_NPC_FILTERS: NpcFilterSettings = {
   minSellVolume: 10000,
   minSellOrders: 25,
+  minActionProfit: 1000,
+  maxRiskScore: 0.7,
   maxProfitMargin: 0.25,
   historySnapshots: 5,
   minProfitableSnapshots: 2,
@@ -49,6 +53,8 @@ const NPC_FILTER_PRESETS: Array<{
     value: {
       minSellVolume: 25000,
       minSellOrders: 50,
+      minActionProfit: 5000,
+      maxRiskScore: 0.45,
       maxProfitMargin: 0.18,
       historySnapshots: 8,
       minProfitableSnapshots: 5,
@@ -59,6 +65,8 @@ const NPC_FILTER_PRESETS: Array<{
     value: {
       minSellVolume: 2500,
       minSellOrders: 10,
+      minActionProfit: 250,
+      maxRiskScore: 0.9,
       maxProfitMargin: 0.4,
       historySnapshots: 3,
       minProfitableSnapshots: 1,
@@ -111,6 +119,7 @@ type NpcArbitrageItem = {
   max_recent_price_jump: number
   spread_percent: number
   risk_score: number
+  risk_level: string
   risk_label: string
   risk_reasons: string[]
   volume_balance_score: number
@@ -171,6 +180,7 @@ type NpcArbitrageDetail = {
   max_recent_price_jump: number
   spread_percent: number
   risk_score: number
+  risk_level: string
   risk_label: string
   risk_reasons: string[]
   volume_balance_score: number
@@ -450,6 +460,8 @@ function sanitizeNpcFilters(filters: Partial<NpcFilterSettings>): NpcFilterSetti
   return {
     minSellVolume: Math.max(0, Number(filters.minSellVolume) || 0),
     minSellOrders: Math.max(0, Number(filters.minSellOrders) || 0),
+    minActionProfit: Math.max(0, Number(filters.minActionProfit) || 0),
+    maxRiskScore: Math.min(1, Math.max(0, Number(filters.maxRiskScore) || 0)),
     maxProfitMargin: Math.max(0.01, Number(filters.maxProfitMargin) || 0.01),
     historySnapshots: Math.max(1, Number(filters.historySnapshots) || 1),
     minProfitableSnapshots: Math.max(1, Number(filters.minProfitableSnapshots) || 1),
@@ -460,6 +472,8 @@ function npcFiltersMatch(left: NpcFilterSettings, right: NpcFilterSettings) {
   return (
     left.minSellVolume === right.minSellVolume &&
     left.minSellOrders === right.minSellOrders &&
+    left.minActionProfit === right.minActionProfit &&
+    left.maxRiskScore === right.maxRiskScore &&
     left.maxProfitMargin === right.maxProfitMargin &&
     left.historySnapshots === right.historySnapshots &&
     left.minProfitableSnapshots === right.minProfitableSnapshots
@@ -574,21 +588,21 @@ function getProjectionHint(item: InvestmentMomentumItem) {
 }
 
 function getNpcQualityLabel(item: NpcArbitrageItem) {
-  return item.risk_label
+  return item.risk_level ?? item.risk_label
 }
 
 function getNpcQualityClass(item: NpcArbitrageItem) {
   const label = getNpcQualityLabel(item)
 
-  if (label === 'stable') {
+  if (label === 'Low') {
     return 'quality-badge stable'
   }
 
-  if (label === 'possible manipulation' || label === 'volatile') {
+  if (label === 'High') {
     return 'quality-badge risk'
   }
 
-  if (label === 'thin liquidity') {
+  if (label === 'Medium') {
     return 'quality-badge warning'
   }
 
@@ -971,6 +985,8 @@ function App() {
           limit: '10',
           min_sell_volume: String(debouncedNpcFilters.minSellVolume),
           min_sell_orders: String(debouncedNpcFilters.minSellOrders),
+          min_action_profit: String(debouncedNpcFilters.minActionProfit),
+          max_risk_score: String(debouncedNpcFilters.maxRiskScore),
           max_profit_margin: String(debouncedNpcFilters.maxProfitMargin),
           history_snapshots: String(debouncedNpcFilters.historySnapshots),
           min_profitable_snapshots: String(debouncedNpcFilters.minProfitableSnapshots),
@@ -1466,9 +1482,9 @@ function App() {
                   positive={Boolean(npcArbitrageItems[0])}
                 />
                 <DetailMetric
-                  label="stable flips"
-                  value={npcArbitrageItems.filter((item) => item.risk_label === 'stable').length}
-                  hint="stable risk rating"
+                  label="low-risk flips"
+                  value={npcArbitrageItems.filter((item) => item.risk_level === 'Low').length}
+                  hint="low risk rating"
                   positive
                 />
                 <DetailMetric
@@ -1524,7 +1540,7 @@ function App() {
                         <small>{formatCompact(item.profit_per_item)} each</small>
                       </span>
                       <span className="risk-cell">
-                        <span className={getNpcQualityClass(item)}>{item.risk_label}</span>
+                        <span className={getNpcQualityClass(item)}>{getNpcQualityLabel(item)}</span>
                         <small>{getNpcRiskReasonSummary(item)}</small>
                       </span>
                     </button>
@@ -1692,6 +1708,41 @@ function App() {
                       />
                     </label>
                     <label>
+                      <span>min profit</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="250"
+                        value={npcFilters.minActionProfit}
+                        onChange={(event) =>
+                          setNpcFilters((current) =>
+                            sanitizeNpcFilters({
+                              ...current,
+                              minActionProfit: Number(event.target.value),
+                            }),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>max risk</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={npcFilters.maxRiskScore}
+                        onChange={(event) =>
+                          setNpcFilters((current) =>
+                            sanitizeNpcFilters({
+                              ...current,
+                              maxRiskScore: Number(event.target.value),
+                            }),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
                       <span>margin</span>
                       <input
                         type="number"
@@ -1757,6 +1808,14 @@ function App() {
                       min orders
                     </span>
                     <span>
+                      <b>{formatCompact(npcFilters.minActionProfit)}</b>
+                      min profit
+                    </span>
+                    <span>
+                      <b>{formatPercent(npcFilters.maxRiskScore)}</b>
+                      max risk
+                    </span>
+                    <span>
                       <b>{formatPercent(npcFilters.maxProfitMargin)}</b>
                       max margin
                     </span>
@@ -1778,7 +1837,7 @@ function App() {
                   <h2>selected flip</h2>
                   {selectedNpcItem ? (
                     <span className={getNpcQualityClass(selectedNpcItem)}>
-                      {selectedNpcItem.risk_label}
+                      {getNpcQualityLabel(selectedNpcItem)}
                     </span>
                   ) : (
                     <span>none</span>
@@ -2230,7 +2289,7 @@ function App() {
                     <span className="rank-number">{index + 1}</span>
                     <div>
                       <b>{item.item_name}</b>
-                      <small>{item.risk_label}</small>
+                      <small>{getNpcQualityLabel(item)}</small>
                     </div>
                     <span className="table-score"><span>{formatCompact(item.profit_per_sell_action)}</span></span>
                   </div>
@@ -2921,7 +2980,7 @@ function App() {
                         <small>{formatCompact(item.profit_per_item)} each</small>
                       </span>
                       <span className="risk-cell">
-                        <span className={getNpcQualityClass(item)}>{item.risk_label}</span>
+                        <span className={getNpcQualityClass(item)}>{getNpcQualityLabel(item)}</span>
                         <small>{getNpcRiskReasonSummary(item)}</small>
                       </span>
                     </button>
@@ -2941,7 +3000,7 @@ function App() {
                       <span>{selectedNpcItem.item_id}</span>
                     </div>
                     <span className={getNpcQualityClass(selectedNpcItem)}>
-                      {selectedNpcItem.risk_label}
+                      {getNpcQualityLabel(selectedNpcItem)}
                     </span>
                   </div>
 

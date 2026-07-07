@@ -32,14 +32,14 @@ class NpcArbitrageTests(unittest.TestCase):
         rows = database.get_npc_arbitrage(limit=10)
         item_ids = [row["item_id"] for row in rows]
 
-        self.assertEqual(["BOBBIN_SCRIPTURES", "HIGH_ESTIMATED", "LOW_MARGIN"], item_ids)
+        self.assertEqual(["BOBBIN_SCRIPTURES"], item_ids)
         self.assertNotIn("LOW_VOLUME", item_ids)
         self.assertNotIn("LOW_ORDERS", item_ids)
         self.assertNotIn("HIGH_MARGIN_OUTLIER", item_ids)
         self.assertNotIn("ONE_SNAPSHOT_SPIKE", item_ids)
 
     def test_uses_sell_price_as_bazaar_buy_cost(self) -> None:
-        rows = database.get_npc_arbitrage(limit=10)
+        rows = database.get_npc_arbitrage(limit=10, min_action_profit=0)
         high_estimated = self._find_item(rows, "HIGH_ESTIMATED")
 
         self.assertEqual(90.0, high_estimated["bazaar_buy_price"])
@@ -50,7 +50,7 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertIn("action_adjusted_profit", high_estimated)
 
     def test_returns_history_fields_for_stable_candidates(self) -> None:
-        rows = database.get_npc_arbitrage(limit=10)
+        rows = database.get_npc_arbitrage(limit=10, min_action_profit=0)
         high_estimated = self._find_item(rows, "HIGH_ESTIMATED")
 
         self.assertEqual(3, high_estimated["observed_snapshots"])
@@ -61,6 +61,7 @@ class NpcArbitrageTests(unittest.TestCase):
             high_estimated["history_adjusted_profit"],
         )
         self.assertEqual("stable", high_estimated["risk_label"])
+        self.assertEqual("Low", high_estimated["risk_level"])
         self.assertLess(high_estimated["risk_score"], 0.3)
         self.assertIn("risk_reasons", high_estimated)
         self.assertIn("max_recent_price_jump", high_estimated)
@@ -81,6 +82,8 @@ class NpcArbitrageTests(unittest.TestCase):
             limit=10,
             min_sell_volume=100,
             min_sell_orders=1,
+            min_action_profit=0,
+            max_risk_score=1,
             max_profit_margin=10,
             min_profitable_snapshots=1,
         )
@@ -97,11 +100,31 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertEqual("thin liquidity", low_volume["risk_label"])
         self.assertEqual("thin liquidity", low_orders["risk_label"])
         self.assertEqual("possible manipulation", high_margin["risk_label"])
+        self.assertEqual("High", low_volume["risk_level"])
+        self.assertEqual("Medium", high_margin["risk_level"])
         self.assertGreater(low_volume["risk_score"], 0.3)
         self.assertGreater(high_margin["risk_score"], 0.3)
         self.assertIn("profit per sell action is low", low_volume["risk_reasons"])
         self.assertIn("profit margin is unusually wide", high_margin["risk_reasons"])
         self.assertIn("profit margin is extreme for an NPC exit", high_margin["risk_reasons"])
+
+    def test_filters_small_action_profit_by_default(self) -> None:
+        rows = database.get_npc_arbitrage(limit=10)
+        item_ids = [row["item_id"] for row in rows]
+
+        self.assertNotIn("HIGH_ESTIMATED", item_ids)
+        self.assertNotIn("LOW_MARGIN", item_ids)
+
+    def test_allows_custom_action_profit_and_risk_thresholds(self) -> None:
+        rows = database.get_npc_arbitrage(
+            limit=10,
+            min_action_profit=0,
+            max_risk_score=1,
+        )
+        item_ids = [row["item_id"] for row in rows]
+
+        self.assertIn("HIGH_ESTIMATED", item_ids)
+        self.assertIn("LOW_MARGIN", item_ids)
 
     def test_npc_risk_flags_fragile_order_books(self) -> None:
         item = database.add_npc_arbitrage_risk_fields(
@@ -192,6 +215,7 @@ class NpcArbitrageTests(unittest.TestCase):
         self.assertEqual("2026-06-12T14:00:00Z", item["latest"]["collected_at"])
         self.assertEqual(90.0, item["latest"]["bazaar_buy_price"])
         self.assertEqual("stable", item["risk_label"])
+        self.assertEqual("Low", item["risk_level"])
         self.assertIn("risk_reasons", item)
 
     def test_returns_none_for_missing_npc_arbitrage_detail(self) -> None:

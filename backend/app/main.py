@@ -11,6 +11,7 @@ from app.collectors.bazaar_collector import collect_bazaar_snapshot
 from app.database import (
     BACKTEST_HORIZONS,
     MAX_NPC_ARBITRAGE_MARGIN,
+    MAX_NPC_ARBITRAGE_RISK_SCORE,
     MAX_MOMENTUM_SINGLE_JUMP,
     MIN_INVESTMENT_SLOT_VALUE,
     MIN_INVESTMENT_STACK_SIZE,
@@ -20,6 +21,7 @@ from app.database import (
     MIN_MOMENTUM_ORDERS,
     MIN_MOMENTUM_RISING_STEPS,
     MIN_MOMENTUM_VOLUME,
+    MIN_NPC_ARBITRAGE_ACTION_PROFIT,
     MIN_NPC_ARBITRAGE_PROFITABLE_SNAPSHOTS,
     MIN_NPC_ARBITRAGE_SELL_ORDERS,
     MIN_NPC_ARBITRAGE_SELL_VOLUME,
@@ -136,6 +138,10 @@ def npc_arbitrage(
     min_sell_orders: Annotated[int, Query(ge=0, le=10_000)] = (
         MIN_NPC_ARBITRAGE_SELL_ORDERS
     ),
+    min_action_profit: Annotated[float, Query(ge=0, le=100_000_000)] = (
+        MIN_NPC_ARBITRAGE_ACTION_PROFIT
+    ),
+    max_risk_score: Annotated[float, Query(ge=0, le=1)] = MAX_NPC_ARBITRAGE_RISK_SCORE,
     max_profit_margin: Annotated[float, Query(gt=0, le=10)] = MAX_NPC_ARBITRAGE_MARGIN,
     history_snapshots: Annotated[int, Query(ge=1, le=100)] = NPC_ARBITRAGE_HISTORY_SNAPSHOTS,
     min_profitable_snapshots: Annotated[int, Query(ge=1, le=100)] = (
@@ -147,6 +153,8 @@ def npc_arbitrage(
             limit=limit,
             min_sell_volume=min_sell_volume,
             min_sell_orders=min_sell_orders,
+            min_action_profit=min_action_profit,
+            max_risk_score=max_risk_score,
             max_profit_margin=max_profit_margin,
             history_snapshots=history_snapshots,
             min_profitable_snapshots=min_profitable_snapshots,

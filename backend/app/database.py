@@ -19,6 +19,8 @@ OCCURRENCE_INVESTMENTS_PATH = Path(__file__).resolve().parents[2] / "data" / "oc
 
 MIN_NPC_ARBITRAGE_SELL_VOLUME = 10_000
 MIN_NPC_ARBITRAGE_SELL_ORDERS = 25
+MIN_NPC_ARBITRAGE_ACTION_PROFIT = 1_000.0
+MAX_NPC_ARBITRAGE_RISK_SCORE = 0.7
 MAX_NPC_ARBITRAGE_MARGIN = 0.25
 NPC_ARBITRAGE_VOLUME_CAP = 10_000
 NPC_ARBITRAGE_HISTORY_SNAPSHOTS = 5
@@ -709,12 +711,20 @@ def add_npc_arbitrage_risk_fields(row: dict[str, Any]) -> dict[str, Any]:
     else:
         risk_label = "stable"
 
+    if risk_score < 0.3:
+        risk_level = "Low"
+    elif risk_score < 0.6:
+        risk_level = "Medium"
+    else:
+        risk_level = "High"
+
     if not risk_reasons:
         risk_reasons.append("liquidity and recent history look stable")
 
     return {
         **row,
         "risk_score": round(risk_score, 4),
+        "risk_level": risk_level,
         "risk_label": risk_label,
         "risk_reasons": risk_reasons,
         "volume_balance_score": round(volume_balance_score, 4),
@@ -730,6 +740,8 @@ def get_npc_arbitrage(
     limit: int = 25,
     min_sell_volume: int = MIN_NPC_ARBITRAGE_SELL_VOLUME,
     min_sell_orders: int = MIN_NPC_ARBITRAGE_SELL_ORDERS,
+    min_action_profit: float = MIN_NPC_ARBITRAGE_ACTION_PROFIT,
+    max_risk_score: float = MAX_NPC_ARBITRAGE_RISK_SCORE,
     max_profit_margin: float = MAX_NPC_ARBITRAGE_MARGIN,
     history_snapshots: int = NPC_ARBITRAGE_HISTORY_SNAPSHOTS,
     min_profitable_snapshots: int = MIN_NPC_ARBITRAGE_PROFITABLE_SNAPSHOTS,
@@ -937,6 +949,12 @@ def get_npc_arbitrage(
 
     enriched_rows = [
         add_npc_arbitrage_risk_fields(add_npc_interaction_fields(dict(row))) for row in rows
+    ]
+    enriched_rows = [
+        row
+        for row in enriched_rows
+        if row["profit_per_sell_action"] >= min_action_profit
+        and row["risk_score"] <= max_risk_score
     ]
     enriched_rows.sort(
         key=lambda item: (
