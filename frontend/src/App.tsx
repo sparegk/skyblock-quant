@@ -391,31 +391,31 @@ const viewCopy: Record<ActiveView, { title: string; subtitle: string }> = {
   },
   markets: {
     title: 'markets',
-    subtitle: 'live Bazaar depth, spreads, and liquidity from the latest snapshot.',
+    subtitle: 'current Bazaar prices, price gaps, and trading volume from the latest snapshot.',
   },
   opportunities: {
-    title: 'npc arbitrage opportunities',
-    subtitle: 'ranked Bazaar to NPC flips with liquidity, consistency, and risk checks.',
+    title: 'NPC arbitrage opportunities',
+    subtitle: 'Bazaar-to-NPC opportunities ranked by trading volume, consistency, and risk.',
   },
   forecasts: {
     title: 'forecasts',
-    subtitle: 'momentum projections, catalyst watches, and tested signal quality.',
+    subtitle: 'price forecasts, event-based opportunities, and historical test quality.',
   },
   rankings: {
     title: 'rankings',
-    subtitle: 'current leaders across investments, NPC flips, catalysts, and tested signals.',
+    subtitle: 'current leaders across investments, NPC trades, event opportunities, and tested signals.',
   },
   research: {
     title: 'research',
-    subtitle: 'signal evidence, backtests, collector runs, and market notes.',
+    subtitle: 'signal evidence, historical tests, collector runs, and market notes.',
   },
   alerts: {
     title: 'alerts',
-    subtitle: 'current market signals, warnings, and follow-up candidates.',
+    subtitle: 'current market alerts, warnings, and items to review.',
   },
   settings: {
     title: 'settings',
-    subtitle: 'local API, data freshness, risk presets, and collector status.',
+    subtitle: 'local API status, data freshness, risk settings, and collector status.',
   },
 }
 
@@ -1126,12 +1126,12 @@ function App() {
       itemId: item.item_id,
       itemName: item.item_name,
       value: formatCompact(item.projected_profit_per_unit),
-      hint: `${formatPercent(item.projected_rise_percent)} projected rise`,
+      hint: `${formatPercent(item.projected_rise_percent)} forecasted rise`,
       score: Math.round(item.projection_confidence * 100),
     })),
     ...npcArbitrageItems.slice(0, 5).map((item) => ({
       key: `npc-${item.item_id}`,
-      type: 'npc flip',
+      type: 'NPC trade',
       itemId: item.item_id,
       itemName: item.item_name,
       value: formatCompact(item.profit_per_sell_action),
@@ -1140,7 +1140,7 @@ function App() {
     })),
     ...occurrenceItems.slice(0, 5).map((item) => ({
       key: `occurrence-${item.item_id}`,
-      type: 'catalyst',
+      type: 'event driver',
       itemId: item.item_id,
       itemName: item.item_name,
       value: formatPercent(item.expected_impact),
@@ -1181,7 +1181,7 @@ function App() {
     [occurrenceItems],
   )
   const marketQualityItems = useMemo(() => rankedItems.slice(0, 8), [rankedItems])
-  const tightBookItems = useMemo(
+  const lowSpreadItems = useMemo(
     () =>
       [...items]
         .filter((item) => item.sell_price > 0 && item.buy_volume + item.sell_volume > 0)
@@ -1425,7 +1425,7 @@ function App() {
               }}
             >
               <SlidersHorizontal size={17} />
-              risk filters
+              risk settings
             </button>
             <button className="icon-button" aria-label="notifications">
               <Bell size={18} />
@@ -1468,7 +1468,7 @@ function App() {
                 <DetailMetric
                   label="stable flips"
                   value={npcArbitrageItems.filter((item) => item.risk_label === 'stable').length}
-                  hint="risk label stable"
+                  hint="stable risk rating"
                   positive
                 />
                 <DetailMetric
@@ -1479,7 +1479,7 @@ function App() {
                 <DetailMetric
                   label="history rule"
                   value={`${npcFilters.minProfitableSnapshots} / ${npcFilters.historySnapshots}`}
-                  hint="profitable snapshots"
+                  hint="profitable checks"
                   positive
                 />
               </div>
@@ -1492,7 +1492,7 @@ function App() {
                     <span>#</span>
                     <span>item</span>
                     <span>bazaar buy</span>
-                    <span>npc sell</span>
+                    <span>NPC sell</span>
                     <span>sell action</span>
                     <span>risk</span>
                   </div>
@@ -1540,8 +1540,8 @@ function App() {
             <article className="panel opportunity-page-panel occurrence-watch-panel">
               <div className="panel-heading">
                 <div>
-                  <h2>top 10 occurrence investments</h2>
-                  <span>official update and event catalysts</span>
+                  <h2>top 10 event-based investments</h2>
+                  <span>official updates and event drivers</span>
                 </div>
                 <span>{occurrenceWatchItems.length} ranked</span>
               </div>
@@ -1589,8 +1589,8 @@ function App() {
                               aria-expanded={isExpanded}
                               aria-label={
                                 isExpanded
-                                  ? `Collapse ${item.item_name} catalyst description`
-                                  : `Expand ${item.item_name} catalyst description`
+                                  ? `Collapse ${item.item_name} event explanation`
+                                  : `Expand ${item.item_name} event explanation`
                               }
                               title={isExpanded ? 'Collapse' : 'Expand'}
                               onClick={() => toggleOccurrenceDescription(item.item_id)}
@@ -1630,7 +1630,7 @@ function App() {
                 </div>
               ) : (
                 <p className="empty-state">
-                  add trusted update, alpha, or creator catalysts to the curated occurrence list.
+                  add trusted updates, alpha notes, or creator-driven events to the curated event list.
                 </p>
               )}
             </article>
@@ -1638,7 +1638,7 @@ function App() {
             <aside className="opportunity-detail-column">
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>risk filters</h2>
+                  <h2>risk settings</h2>
                   <span>{npcFiltersMatch(npcFilters, DEFAULT_NPC_FILTERS) ? 'balanced' : 'custom'}</span>
                 </div>
 
@@ -1656,7 +1656,7 @@ function App() {
                 </div>
 
                 {showNpcFilters ? (
-                  <div className="risk-filter-grid" aria-label="Bazaar to NPC flip risk filters">
+                  <div className="risk-filter-grid" aria-label="Bazaar to NPC flip risk settings">
                     <label>
                       <span>volume</span>
                       <input
@@ -1807,7 +1807,7 @@ function App() {
                         <DetailMetric
                           label="consistency"
                           value={`${selectedNpcDetail.profitable_snapshots} / ${selectedNpcDetail.observed_snapshots}`}
-                          hint="profitable snapshots"
+                          hint="profitable checks"
                           positive={selectedNpcDetail.profit_consistency >= 0.75}
                         />
                         <DetailMetric
@@ -1824,7 +1824,7 @@ function App() {
                         />
                       </div>
                       {selectedNpcDetail.risk_reasons.length > 0 ? (
-                        <div className="risk-reason-list compact-risk-reasons" aria-label="risk reasons">
+                        <div className="risk-reason-list compact-risk-reasons" aria-label="risk notes">
                           {selectedNpcDetail.risk_reasons.slice(0, 2).map((reason) => (
                             <span key={reason}>{reason}</span>
                           ))}
@@ -1852,7 +1852,7 @@ function App() {
                     <p className="empty-state">no recent history for this item.</p>
                   )
                 ) : (
-                  <p className="empty-state">select a flip to inspect history and risk.</p>
+                  <p className="empty-state">select an opportunity to inspect history and risk.</p>
                 )}
               </article>
             </aside>
@@ -1863,7 +1863,7 @@ function App() {
               <div className="panel-heading">
                 <div>
                   <h2>live bazaar board</h2>
-                  <span>{query.trim() ? 'search results' : 'highest current spreads'}</span>
+                  <span>{query.trim() ? 'search results' : 'largest current price gaps'}</span>
                 </div>
                 <span>{formatSnapshotTime(summary?.latest_snapshot ?? null)}</span>
               </div>
@@ -1877,7 +1877,7 @@ function App() {
                 <DetailMetric
                   label="rows"
                   value={summary ? formatCompact(summary.total_rows) : 'n/a'}
-                  hint="historical snapshots"
+                  hint="historical checks"
                 />
                 <DetailMetric
                   label="gap max"
@@ -1944,15 +1944,15 @@ function App() {
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>spread watch</h2>
-                  <span>wide books</span>
+                  <h2>large price gap watch</h2>
+                  <span>large price gaps</span>
                 </div>
                 {spreadItems.slice(0, 6).map((item) => (
                   <div className="alert-row" key={item.item_id}>
                     <span className="alert-dot watch-dot" />
                     <div>
                       <b>{formatItemName(item.item_id)}</b>
-                      <small>{formatCompact(item.spread)} gap / {formatCompact(item.sell_volume)} sell volume</small>
+                      <small>{formatCompact(item.spread)} price gap / {formatCompact(item.sell_volume)} sell volume</small>
                     </div>
                   </div>
                 ))}
@@ -1963,7 +1963,7 @@ function App() {
               <article className="panel compact-panel">
                 <div className="panel-heading">
                   <h2>market quality</h2>
-                  <span>score blend</span>
+                  <span>overall score</span>
                 </div>
                 {marketQualityItems.slice(0, 5).map((item) => (
                   <div className="mini-stat-row" key={item.item_id}>
@@ -1978,10 +1978,10 @@ function App() {
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>tight books</h2>
-                  <span>lower slippage</span>
+                  <h2>low-spread markets</h2>
+                  <span>smaller price gaps</span>
                 </div>
-                {tightBookItems.map((item) => (
+                {lowSpreadItems.map((item) => (
                   <div className="mini-stat-row" key={item.item_id}>
                     <div>
                       <b>{formatItemName(item.item_id)}</b>
@@ -1994,13 +1994,13 @@ function App() {
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>snapshot coverage</h2>
-                  <span>{isSnapshotStale ? 'needs refresh' : 'fresh'}</span>
+                  <h2>data coverage</h2>
+                  <span>{isSnapshotStale ? 'needs update' : 'current'}</span>
                 </div>
                 <div className="info-stack">
                   <DetailMetric label="coverage" value={`${Math.round(marketCoveragePercent * 100)}%`} hint="row depth target" positive={marketCoveragePercent >= 0.7} />
-                  <DetailMetric label="spread rows" value={spreadItems.length} hint="wide books loaded" positive={spreadItems.length > 0} />
-                  <DetailMetric label="staleness" value={snapshotAgeMinutes === null ? 'n/a' : `${snapshotAgeMinutes}m`} hint="latest snapshot age" positive={!isSnapshotStale} />
+                  <DetailMetric label="spread rows" value={spreadItems.length} hint="large-gap rows loaded" positive={spreadItems.length > 0} />
+                  <DetailMetric label="data age" value={snapshotAgeMinutes === null ? 'n/a' : `${snapshotAgeMinutes}m`} hint="latest snapshot age" positive={!isSnapshotStale} />
                 </div>
               </article>
             </section>
@@ -2011,7 +2011,7 @@ function App() {
               <div className="panel-heading">
                 <div>
                   <h2>momentum forecast board</h2>
-                  <span>{rankedInvestments.length} qualified projected setups</span>
+                  <span>{rankedInvestments.length} qualified forecasted setups</span>
                 </div>
                 <span>{formatSnapshotTime(summary?.latest_snapshot ?? null)}</span>
               </div>
@@ -2027,7 +2027,7 @@ function App() {
                     positive={Boolean(featuredInvestment)}
                   />
                   <DetailMetric
-                    label="projection"
+                    label="forecast"
                     value={featuredInvestment ? formatPercent(featuredInvestment.projected_rise_percent) : 'n/a'}
                     hint="best current rise"
                     positive
@@ -2035,13 +2035,13 @@ function App() {
                   <DetailMetric
                     label="hit rate"
                     value={backtestSummary?.total_results ? `${backtestWinRate}%` : 'n/a'}
-                    hint="tested signals"
+                    hint="historically tested signals"
                     positive={backtestSummary ? backtestSummary.win_rate >= 0.5 : false}
                   />
                   <DetailMetric
-                    label="catalysts"
+                    label="event drivers"
                     value={occurrenceItems.length}
-                    hint="event watches"
+                    hint="event-based items"
                     positive
                   />
                 </div>
@@ -2084,8 +2084,8 @@ function App() {
             <aside className="page-side-column">
               <article className="panel occurrence-panel">
                 <div className="panel-heading">
-                  <h2>catalyst forecast</h2>
-                  <span>event driven</span>
+                  <h2>event-based forecast</h2>
+                  <span>event-based</span>
                 </div>
                 {featuredOccurrenceInvestment ? (
                   <>
@@ -2101,14 +2101,14 @@ function App() {
                     </div>
                   </>
                 ) : (
-                  <p className="empty-state">waiting for catalyst watches.</p>
+                  <p className="empty-state">waiting for event-based opportunities.</p>
                 )}
               </article>
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
                   <h2>signal quality</h2>
-                  <span>backtested</span>
+                  <span>historically tested</span>
                 </div>
                 {visibleBacktestSignalBreakdowns.slice(0, 5).map((row) => (
                   <div className="breakdown-row" key={row.signal_type}>
@@ -2123,14 +2123,14 @@ function App() {
             <section className="page-lower-grid">
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>projection risk</h2>
-                  <span>jump checks</span>
+                  <h2>forecast risk</h2>
+                  <span>price-spike checks</span>
                 </div>
                 {projectionRiskItems.map((item) => (
                   <div className="mini-stat-row" key={item.item_id}>
                     <div>
                       <b>{item.item_name}</b>
-                      <small>{formatPercent(item.projected_rise_percent)} projected / {formatCompact(item.average_volume)} avg volume</small>
+                      <small>{formatPercent(item.projected_rise_percent)} forecasted / {formatCompact(item.average_volume)} avg volume</small>
                     </div>
                     <span className={item.max_single_jump > 0.3 ? 'table-score warning' : 'table-score'}>
                       <span>{formatPercent(item.max_single_jump)}</span>
@@ -2141,8 +2141,8 @@ function App() {
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>forecast horizons</h2>
-                  <span>backtest return</span>
+                  <h2>forecast time windows</h2>
+                  <span>historical test return</span>
                 </div>
                 {(backtestSummary?.by_horizon ?? []).slice(0, 5).map((row) => (
                   <div className="breakdown-row" key={row.horizon}>
@@ -2152,14 +2152,14 @@ function App() {
                   </div>
                 ))}
                 {!backtestSummary?.by_horizon.length ? (
-                  <p className="empty-state">waiting for horizon results.</p>
+                  <p className="empty-state">waiting for time-window results.</p>
                 ) : null}
               </article>
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>catalyst mix</h2>
-                  <span>occurrences</span>
+                  <h2>event driver mix</h2>
+                  <span>event items</span>
                 </div>
                 {catalystGroups.map((group) => (
                   <div className="mini-stat-row" key={group.catalyst}>
@@ -2171,7 +2171,7 @@ function App() {
                   </div>
                 ))}
                 {!catalystGroups.length ? (
-                  <p className="empty-state">no catalyst groups loaded.</p>
+                  <p className="empty-state">no event groups loaded.</p>
                 ) : null}
               </article>
             </section>
@@ -2182,7 +2182,7 @@ function App() {
               <div className="panel-heading">
                 <div>
                   <h2>cross-market rankings</h2>
-                  <span>investments, flips, catalysts, and tested ideas</span>
+                  <span>investments, NPC trades, event opportunities, and tested ideas</span>
                 </div>
                 <span>{rankingLeaders.length} leaders</span>
               </div>
@@ -2213,7 +2213,7 @@ function App() {
                     <span className="rank-number">{index + 1}</span>
                     <div>
                       <b>{item.item_name}</b>
-                      <small>{formatPercent(item.projected_rise_percent)} projected</small>
+                      <small>{formatPercent(item.projected_rise_percent)} forecasted</small>
                     </div>
                     <span className="table-score"><span>{formatCompact(item.projected_profit_per_unit)}</span></span>
                   </div>
@@ -2242,19 +2242,19 @@ function App() {
               <article className="panel compact-panel">
                 <div className="panel-heading">
                   <h2>category leaders</h2>
-                  <span>best by lane</span>
+                  <span>best by category</span>
                 </div>
                 <div className="category-leader-grid">
                   <DetailMetric label="momentum" value={featuredInvestment ? formatCompact(featuredInvestment.projected_profit_per_unit) : 'n/a'} hint={featuredInvestment?.item_name ?? 'waiting'} positive={Boolean(featuredInvestment)} />
-                  <DetailMetric label="npc flip" value={npcArbitrageItems[0] ? formatCompact(npcArbitrageItems[0].profit_per_sell_action) : 'n/a'} hint={npcArbitrageItems[0]?.item_name ?? 'waiting'} positive={Boolean(npcArbitrageItems[0])} />
-                  <DetailMetric label="catalyst" value={featuredOccurrenceInvestment ? formatPercent(featuredOccurrenceInvestment.expected_impact) : 'n/a'} hint={featuredOccurrenceInvestment?.item_name ?? 'waiting'} positive={Boolean(featuredOccurrenceInvestment)} />
+                  <DetailMetric label="NPC trade" value={npcArbitrageItems[0] ? formatCompact(npcArbitrageItems[0].profit_per_sell_action) : 'n/a'} hint={npcArbitrageItems[0]?.item_name ?? 'waiting'} positive={Boolean(npcArbitrageItems[0])} />
+                  <DetailMetric label="event driver" value={featuredOccurrenceInvestment ? formatPercent(featuredOccurrenceInvestment.expected_impact) : 'n/a'} hint={featuredOccurrenceInvestment?.item_name ?? 'waiting'} positive={Boolean(featuredOccurrenceInvestment)} />
                 </div>
               </article>
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
                   <h2>tested leaders</h2>
-                  <span>realized return</span>
+                  <span>actual return</span>
                 </div>
                 {visibleBacktestResults.slice(0, 5).map((result) => (
                   <div className="mini-stat-row" key={result.id}>
@@ -2274,7 +2274,7 @@ function App() {
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>occurrence leaders</h2>
+                  <h2>event leaders</h2>
                   <span>event score</span>
                 </div>
                 {occurrenceItems.slice(0, 5).map((item, index) => (
@@ -2296,7 +2296,7 @@ function App() {
               <div className="panel-heading">
                 <div>
                   <h2>research notebook</h2>
-                  <span>latest signal evidence and backtest readouts</span>
+                  <span>latest signal evidence and historical test results</span>
                 </div>
                 <span>{backtestSummary?.latest_evaluated_at ? formatSnapshotTime(backtestSummary.latest_evaluated_at) : 'not evaluated'}</span>
               </div>
@@ -2304,8 +2304,8 @@ function App() {
                 <>
                   <div className="backtest-summary-grid research-summary-grid">
                     <DetailMetric label="win rate" value={`${backtestWinRate}%`} hint={`${backtestSummary.successful_results} successful`} positive={backtestSummary.win_rate >= 0.5} />
-                    <DetailMetric label="avg return" value={formatPercent(backtestSummary.average_return)} hint="all evaluated signals" positive={backtestSummary.average_return >= 0} />
-                    <DetailMetric label="projection hit" value={backtestSummary.projection_results ? `${Math.round(backtestSummary.projection_hit_rate * 100)}%` : 'n/a'} hint={`${backtestSummary.projection_results} projected`} positive={backtestSummary.projection_hit_rate >= 0.5} />
+                    <DetailMetric label="average return" value={formatPercent(backtestSummary.average_return)} hint="all tested signals" positive={backtestSummary.average_return >= 0} />
+                    <DetailMetric label="forecast hit" value={backtestSummary.projection_results ? `${Math.round(backtestSummary.projection_hit_rate * 100)}%` : 'n/a'} hint={`${backtestSummary.projection_results} forecasted`} positive={backtestSummary.projection_hit_rate >= 0.5} />
                     <DetailMetric label="pending" value={formatCompact(backtestSummary.pending_evaluations)} hint={`${backtestSummary.total_signals} tracked`} positive={backtestSummary.pending_evaluations === 0} />
                   </div>
                   <div className="backtest-result-list">
@@ -2324,7 +2324,7 @@ function App() {
                   </div>
                 </>
               ) : (
-                <p className="empty-state">run backtest evaluation after signals have future snapshots.</p>
+                <p className="empty-state">run historical test evaluation after signals have future snapshots.</p>
               )}
             </article>
 
@@ -2348,7 +2348,7 @@ function App() {
               <article className="panel compact-panel">
                 <div className="panel-heading">
                   <h2>research notes</h2>
-                  <span>current model</span>
+                  <span>latest model results</span>
                 </div>
                 {signals.slice(0, 5).map((signal) => (
                   <div className="insight-row" key={signal.id}>
@@ -2365,8 +2365,8 @@ function App() {
             <section className="page-lower-grid">
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>horizon evidence</h2>
-                  <span>drawdown aware</span>
+                  <h2>time-window evidence</h2>
+                  <span>largest drop</span>
                 </div>
                 {(backtestSummary?.by_horizon ?? []).slice(0, 5).map((row) => (
                   <div className="breakdown-row" key={row.horizon}>
@@ -2376,19 +2376,19 @@ function App() {
                   </div>
                 ))}
                 {!backtestSummary?.by_horizon.length ? (
-                  <p className="empty-state">no horizon evidence yet.</p>
+                  <p className="empty-state">no time-window evidence yet.</p>
                 ) : null}
               </article>
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>model coverage</h2>
-                  <span>signal pipeline</span>
+                  <h2>test coverage</h2>
+                  <span>signal tests</span>
                 </div>
                 <div className="info-stack">
-                  <DetailMetric label="coverage" value={backtestSummary ? `${Math.round(backtestSummary.coverage_rate * 100)}%` : 'n/a'} hint="possible evaluations" positive={(backtestSummary?.coverage_rate ?? 0) >= 0.5} />
-                  <DetailMetric label="pending" value={formatCompact(backtestSummary?.pending_evaluations ?? 0)} hint="future snapshots needed" positive={(backtestSummary?.pending_evaluations ?? 1) === 0} />
-                  <DetailMetric label="projection error" value={backtestSummary ? formatPercent(backtestSummary.average_absolute_projection_error) : 'n/a'} hint="absolute miss" positive={(backtestSummary?.average_absolute_projection_error ?? 1) <= 0.2} />
+                  <DetailMetric label="coverage" value={backtestSummary ? `${Math.round(backtestSummary.coverage_rate * 100)}%` : 'n/a'} hint="possible tests" positive={(backtestSummary?.coverage_rate ?? 0) >= 0.5} />
+                  <DetailMetric label="pending" value={formatCompact(backtestSummary?.pending_evaluations ?? 0)} hint="future snapshots required" positive={(backtestSummary?.pending_evaluations ?? 1) === 0} />
+                  <DetailMetric label="forecast error" value={backtestSummary ? formatPercent(backtestSummary.average_absolute_projection_error) : 'n/a'} hint="average miss" positive={(backtestSummary?.average_absolute_projection_error ?? 1) <= 0.2} />
                 </div>
               </article>
 
@@ -2400,7 +2400,7 @@ function App() {
                 <div className="info-stack">
                   <DetailMetric label="products" value={formatCompact(latestJob?.products_collected ?? 0)} hint="collected last run" positive={(latestJob?.products_collected ?? 0) > 0} />
                   <DetailMetric label="signals" value={formatCompact(latestJob?.signals_generated ?? 0)} hint="generated last run" positive={(latestJob?.signals_generated ?? 0) > 0} />
-                  <DetailMetric label="backtests" value={formatCompact(latestJobBacktestsEvaluated)} hint={latestJob ? formatBacktestCounts(latestJob.backtests_evaluated) : 'none'} positive={latestJobBacktestsEvaluated > 0} />
+                  <DetailMetric label="historical tests" value={formatCompact(latestJobBacktestsEvaluated)} hint={latestJob ? formatBacktestCounts(latestJob.backtests_evaluated) : 'none'} positive={latestJobBacktestsEvaluated > 0} />
                 </div>
               </article>
             </section>
@@ -2410,8 +2410,8 @@ function App() {
             <article className="panel page-main-panel">
               <div className="panel-heading">
                 <div>
-                  <h2>active alert feed</h2>
-                  <span>generated market signals from the latest model run</span>
+                  <h2>active alert list</h2>
+                  <span>market alerts generated by the latest model run</span>
                 </div>
                 <span>{signals.length} signals</span>
               </div>
@@ -2429,7 +2429,7 @@ function App() {
                     </span>
                   </article>
                 )) : (
-                  <p className="empty-state">waiting for live signals.</p>
+                  <p className="empty-state">waiting for current alerts.</p>
                 )}
               </div>
             </article>
@@ -2437,7 +2437,7 @@ function App() {
             <aside className="page-side-column">
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>risk queue</h2>
+                  <h2>risk list</h2>
                   <span>warnings</span>
                 </div>
                 {signals.filter((signal) => signal.severity === 'risk').slice(0, 6).map((signal) => (
@@ -2450,14 +2450,14 @@ function App() {
                   </div>
                 ))}
                 {signals.filter((signal) => signal.severity === 'risk').length === 0 ? (
-                  <p className="empty-state">no risk alerts in the current feed.</p>
+                  <p className="empty-state">no risk alerts in the current list.</p>
                 ) : null}
               </article>
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>watch queue</h2>
-                  <span>positive + watch</span>
+                  <h2>monitor list</h2>
+                  <span>positive and monitor</span>
                 </div>
                 {signals.filter((signal) => signal.severity !== 'risk').slice(0, 6).map((signal) => (
                   <div className="alert-row" key={signal.id}>
@@ -2475,11 +2475,11 @@ function App() {
               <article className="panel compact-panel">
                 <div className="panel-heading">
                   <h2>severity mix</h2>
-                  <span>current feed</span>
+                  <span>current list</span>
                 </div>
                 <div className="category-leader-grid">
-                  <DetailMetric label="positive" value={signalSeverityCounts.positive ?? 0} hint="buy-side alerts" positive />
-                  <DetailMetric label="watch" value={signalSeverityCounts.watch ?? 0} hint="monitor alerts" positive={(signalSeverityCounts.watch ?? 0) > 0} />
+                  <DetailMetric label="positive" value={signalSeverityCounts.positive ?? 0} hint="positive alerts" positive />
+                  <DetailMetric label="watch" value={signalSeverityCounts.watch ?? 0} hint="items to monitor" positive={(signalSeverityCounts.watch ?? 0) > 0} />
                   <DetailMetric label="risk" value={signalSeverityCounts.risk ?? 0} hint="warnings" positive={(signalSeverityCounts.risk ?? 0) === 0} />
                 </div>
                 <div className="stacked-row-list">
@@ -2497,8 +2497,8 @@ function App() {
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>risk reasons</h2>
-                  <span>npc checks</span>
+                  <h2>risk notes</h2>
+                  <span>NPC trade checks</span>
                 </div>
                 {recentRiskReasons.slice(0, 5).map((risk) => (
                   <div className="alert-row" key={risk.key}>
@@ -2510,19 +2510,19 @@ function App() {
                   </div>
                 ))}
                 {!recentRiskReasons.length ? (
-                  <p className="empty-state">no npc risk reasons loaded.</p>
+                  <p className="empty-state">no npc risk notes loaded.</p>
                 ) : null}
               </article>
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>freshness guard</h2>
-                  <span>{isSnapshotStale ? 'stale' : 'live enough'}</span>
+                  <h2>data freshness</h2>
+                  <span>{isSnapshotStale ? 'outdated' : 'current'}</span>
                 </div>
                 <div className="info-stack">
                   <DetailMetric label="snapshot" value={snapshotAgeMinutes === null ? 'n/a' : `${snapshotAgeMinutes}m`} hint={formatSnapshotTime(summary?.latest_snapshot ?? null)} positive={!isSnapshotStale} />
                   <DetailMetric label="latest job" value={latestJob?.status ?? 'none'} hint={latestJob?.message ?? latestJob?.job_type ?? 'waiting'} positive={latestJob?.status === 'success'} />
-                  <DetailMetric label="alerts" value={signals.length} hint="loaded in feed" positive={signals.length > 0} />
+                  <DetailMetric label="alerts" value={signals.length} hint="loaded in the alert list" positive={signals.length > 0} />
                 </div>
               </article>
             </section>
@@ -2542,17 +2542,17 @@ function App() {
               <div className="settings-grid">
                 <DetailMetric label="api base" value="127.0.0.1" hint={API_BASE_URL} positive={!error} />
                 <DetailMetric label="database" value={summary?.database_ready ? 'ready' : 'waiting'} hint={`${formatCompact(summary?.tracked_products ?? 0)} products`} positive={Boolean(summary?.database_ready)} />
-                <DetailMetric label="snapshot" value={formatSnapshotTime(summary?.latest_snapshot ?? null)} hint={isSnapshotStale ? 'stale' : 'fresh enough'} positive={!isSnapshotStale} />
-                <DetailMetric label="signals" value={signals.length} hint="latest feed" positive={signals.length > 0} />
+                <DetailMetric label="snapshot" value={formatSnapshotTime(summary?.latest_snapshot ?? null)} hint={isSnapshotStale ? 'outdated' : 'current enough'} positive={!isSnapshotStale} />
+                <DetailMetric label="signals" value={signals.length} hint="latest alerts" positive={signals.length > 0} />
                 <DetailMetric label="jobs" value={jobRuns.length} hint={latestJob?.status ?? 'no runs'} positive={latestJob?.status === 'success'} />
-                <DetailMetric label="backtests" value={backtestSummary ? formatCompact(backtestSummary.total_results) : 'n/a'} hint="evaluated results" positive={Boolean(backtestSummary?.total_results)} />
+                <DetailMetric label="historical tests" value={backtestSummary ? formatCompact(backtestSummary.total_results) : 'n/a'} hint="historical test results" positive={Boolean(backtestSummary?.total_results)} />
               </div>
             </article>
 
             <aside className="page-side-column">
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>npc risk defaults</h2>
+                  <h2>NPC risk defaults</h2>
                   <span>{npcFiltersMatch(npcFilters, DEFAULT_NPC_FILTERS) ? 'balanced' : 'custom'}</span>
                 </div>
                 <div className="risk-filter-summary">
@@ -2587,15 +2587,15 @@ function App() {
             <section className="page-lower-grid">
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>api endpoints</h2>
+                  <h2>API endpoints</h2>
                   <span>frontend coverage</span>
                 </div>
                 {[
                   { label: 'bazaar summary', value: summary ? 'ready' : 'waiting', hint: '/api/bazaar/summary', ok: Boolean(summary) },
-                  { label: 'npc arbitrage', value: npcArbitrageItems.length, hint: '/api/arbitrage/npc', ok: npcArbitrageItems.length > 0 },
+                  { label: 'NPC arbitrage', value: npcArbitrageItems.length, hint: '/api/arbitrage/npc', ok: npcArbitrageItems.length > 0 },
                   { label: 'momentum', value: rankedInvestments.length, hint: '/api/investments/momentum', ok: rankedInvestments.length > 0 },
                   { label: 'signals', value: signals.length, hint: '/api/signals/latest', ok: signals.length > 0 },
-                  { label: 'backtests', value: backtestSummary?.total_results ?? 0, hint: '/api/backtests/summary', ok: Boolean(backtestSummary?.total_results) },
+                  { label: 'historical tests', value: backtestSummary?.total_results ?? 0, hint: '/api/backtests/summary', ok: Boolean(backtestSummary?.total_results) },
                 ].map((endpoint) => (
                   <div className="endpoint-row" key={endpoint.label}>
                     <span className={endpoint.ok ? 'alert-dot positive-dot' : 'alert-dot watch-dot'} />
@@ -2610,25 +2610,25 @@ function App() {
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>model thresholds</h2>
-                  <span>current filters</span>
+                  <h2>model settings</h2>
+                  <span>current settings</span>
                 </div>
                 <div className="info-stack">
-                  <DetailMetric label="min rise" value={formatPercent(MIN_FEATURED_PROJECTED_RISE)} hint="featured investment gate" positive />
+                  <DetailMetric label="min rise" value={formatPercent(MIN_FEATURED_PROJECTED_RISE)} hint="featured investment minimum" positive />
                   <DetailMetric label="min unit" value={formatCompact(MIN_FEATURED_UNIT_PRICE)} hint="low-value item filter" positive />
-                  <DetailMetric label="watch cap" value={INVESTMENT_WATCH_LIMIT} hint="ranked investment list" positive />
+                  <DetailMetric label="list limit" value={INVESTMENT_WATCH_LIMIT} hint="ranked investment list" positive />
                 </div>
               </article>
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
                   <h2>data sources</h2>
-                  <span>loaded state</span>
+                  <span>loaded data</span>
                 </div>
                 <div className="info-stack">
                   <DetailMetric label="bazaar rows" value={formatCompact(items.length)} hint="latest rows in memory" positive={items.length > 0} />
-                  <DetailMetric label="spreads" value={formatCompact(spreadItems.length)} hint="top-spread rows" positive={spreadItems.length > 0} />
-                  <DetailMetric label="occurrences" value={formatCompact(occurrenceItems.length)} hint="catalyst watches" positive={occurrenceItems.length > 0} />
+                  <DetailMetric label="spreads" value={formatCompact(spreadItems.length)} hint="largest price-gap rows" positive={spreadItems.length > 0} />
+                  <DetailMetric label="event items" value={formatCompact(occurrenceItems.length)} hint="event-based items" positive={occurrenceItems.length > 0} />
                 </div>
               </article>
             </section>
@@ -2636,7 +2636,7 @@ function App() {
             <section className="page-lower-grid">
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>collector cadence</h2>
+                  <h2>collector schedule</h2>
                   <span>recent run</span>
                 </div>
                 {jobRuns.slice(0, 4).map((job) => (
@@ -2653,8 +2653,8 @@ function App() {
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>risk presets</h2>
-                  <span>npc filters</span>
+                  <h2>risk setting levels</h2>
+                  <span>NPC filters</span>
                 </div>
                 {NPC_FILTER_PRESETS.map((preset) => (
                   <div className="mini-stat-row" key={preset.label}>
@@ -2669,13 +2669,13 @@ function App() {
 
               <article className="panel compact-panel">
                 <div className="panel-heading">
-                  <h2>calculation modules</h2>
+                  <h2>calculation checks</h2>
                   <span>status</span>
                 </div>
                 {[
-                  { label: 'market scoring', value: marketScore, hint: 'investment and spread blend', ok: marketScore > 0 },
-                  { label: 'npc risk model', value: npcArbitrageItems.length, hint: 'liquidity and manipulation checks', ok: npcArbitrageItems.length > 0 },
-                  { label: 'backtest engine', value: backtestSummary?.total_results ?? 0, hint: 'tested signal outcomes', ok: Boolean(backtestSummary?.total_results) },
+                  { label: 'market scoring', value: marketScore, hint: 'investment and price-gap score', ok: marketScore > 0 },
+                  { label: 'NPC risk model', value: npcArbitrageItems.length, hint: 'liquidity and manipulation checks', ok: npcArbitrageItems.length > 0 },
+                  { label: 'historical test engine', value: backtestSummary?.total_results ?? 0, hint: 'historically tested signal results', ok: Boolean(backtestSummary?.total_results) },
                 ].map((module) => (
                   <div className="mini-stat-row" key={module.label}>
                     <div>
@@ -2753,12 +2753,12 @@ function App() {
           <div className="left-column">
             <article className="panel market-watch-panel">
               <div className="panel-heading">
-                <h2>featured investment watch</h2>
+                <h2>featured investment to monitor</h2>
                 <span>{formatSnapshotTime(summary?.latest_snapshot ?? null)}</span>
               </div>
 
               {isLoading ? (
-                <p className="empty-state">loading bazaar snapshot...</p>
+                <p className="empty-state">loading Bazaar snapshot...</p>
               ) : selectedInvestment ? (
                 <>
                   <div className="featured-strip">
@@ -2777,7 +2777,7 @@ function App() {
                       />
                       <div>
                         <b>{formatCompact(selectedInvestment.projected_target_price)}</b>
-                        <span>projected target</span>
+                        <span>forecasted target</span>
                       </div>
                     </div>
 
@@ -2810,7 +2810,7 @@ function App() {
                   </div>
 
                   <div className="table-section-heading">
-                    <h3>items to watch</h3>
+                    <h3>items to monitor</h3>
                     <span>
                       top {INVESTMENT_WATCH_LIMIT} -{' '}
                       {risingInvestmentCount} above 10%
@@ -2862,12 +2862,12 @@ function App() {
                         </span>
                       </button>
                     )) : (
-                      <p className="empty-state">no high-price 10%+ investment setups in the current snapshot.</p>
+                      <p className="empty-state">no high-price 10%+ investment opportunities in the current snapshot.</p>
                     )}
                   </div>
                 </>
               ) : (
-                <p className="empty-state">no high-price 10%+ investment setups in the current snapshot.</p>
+                <p className="empty-state">no high-price 10%+ investment opportunities in the current snapshot.</p>
                 )}
             </article>
 
@@ -2889,7 +2889,7 @@ function App() {
                     <span>#</span>
                     <span>item</span>
                     <span>bazaar buy</span>
-                    <span>npc sell</span>
+                    <span>NPC sell</span>
                     <span>sell action</span>
                     <span>risk</span>
                   </div>
@@ -2959,7 +2959,7 @@ function App() {
                         <DetailMetric
                           label="consistency"
                           value={`${selectedNpcDetail.profitable_snapshots} / ${selectedNpcDetail.observed_snapshots}`}
-                          hint="profitable snapshots"
+                          hint="profitable checks"
                           positive={selectedNpcDetail.profit_consistency >= 0.75}
                         />
                         <DetailMetric
@@ -2977,7 +2977,7 @@ function App() {
                       </div>
 
                       {selectedNpcDetail.risk_reasons.length > 0 ? (
-                        <div className="risk-reason-list compact-risk-reasons" aria-label="risk reasons">
+                        <div className="risk-reason-list compact-risk-reasons" aria-label="risk notes">
                           {selectedNpcDetail.risk_reasons.slice(0, 3).map((reason) => (
                             <span key={reason}>{reason}</span>
                           ))}
@@ -3024,7 +3024,7 @@ function App() {
                   <span>
                     {featuredInvestment
                       ? `${featuredInvestment.item_name} leads recent bazaar momentum.`
-                      : 'collect more snapshots for stronger price trends.'}
+                      : 'collect more snapshots to confirm stronger price trends.'}
                   </span>
                 </div>
               </div>
@@ -3041,8 +3041,8 @@ function App() {
 
             <article className="panel occurrence-panel">
               <div className="panel-heading">
-                <h2>occurrence investment</h2>
-                <span>event catalyst</span>
+                <h2>event-based investment</h2>
+                <span>event driver</span>
               </div>
               {featuredOccurrenceInvestment ? (
                 <>
@@ -3082,7 +3082,7 @@ function App() {
                 </>
               ) : (
                 <p className="empty-state">
-                  add trusted update, alpha, rumor, or video catalysts to the curated occurrence list.
+                  add trusted updates, alpha notes, rumors, or video-driven events to the curated event list.
                 </p>
               )}
             </article>
@@ -3131,21 +3131,21 @@ function App() {
                 <FileText size={16} />
                 <div>
                   <b>Bazaar to NPC baseline</b>
-                  <small>metadata joined with latest bazaar snapshot</small>
+                  <small>metadata matched with the latest Bazaar snapshot</small>
                 </div>
               </div>
               <div className="insight-row">
                 <FileText size={16} />
                 <div>
                   <b>liquidity review</b>
-                  <small>flips must hold across recent snapshots</small>
+                  <small>opportunities must stay profitable across recent snapshots</small>
                 </div>
               </div>
               <div className="insight-row">
                 <FileText size={16} />
                 <div>
-                  <b>spread behavior snapshot</b>
-                  <small>wide spreads need manipulation checks</small>
+                  <b>price-gap behavior snapshot</b>
+                  <small>large price gaps need manipulation checks</small>
                 </div>
               </div>
             </article>
@@ -3184,7 +3184,7 @@ function App() {
                       hint="generated"
                     />
                     <DetailMetric
-                      label="backtests"
+                      label="historical tests"
                       value={Object.values(latestJob.backtests_evaluated).reduce(
                         (sum, count) => sum + count,
                         0,
@@ -3216,7 +3216,7 @@ function App() {
         <section className="lower-dashboard-grid">
           <article className="panel compact-panel">
             <div className="panel-heading">
-              <h2>backtest results</h2>
+              <h2>historical test results</h2>
               <span>
                 {backtestSummary?.latest_evaluated_at
                   ? formatSnapshotTime(backtestSummary.latest_evaluated_at)
@@ -3240,9 +3240,9 @@ function App() {
                     positive={backtestSummary.coverage_rate >= 0.5}
                   />
                   <DetailMetric
-                    label="avg return"
+                    label="average return"
                     value={formatPercent(backtestSummary.average_return)}
-                    hint="evaluated signals"
+                    hint="tested signals"
                     positive={backtestSummary.average_return >= 0}
                   />
                   <DetailMetric
@@ -3252,22 +3252,22 @@ function App() {
                     positive={backtestSummary.median_return >= 0}
                   />
                   <DetailMetric
-                    label="drawdown"
+                    label="largest drop"
                     value={formatPercent(backtestSummary.average_drawdown)}
                     hint="average path low"
                   />
                   <DetailMetric
-                    label="projection hit"
+                    label="forecast hit"
                     value={
                       backtestSummary.projection_results
                         ? `${Math.round(backtestSummary.projection_hit_rate * 100)}%`
                         : 'n/a'
                     }
-                    hint={`${backtestSummary.projection_results} projected picks`}
+                    hint={`${backtestSummary.projection_results} forecasted picks`}
                     positive={backtestSummary.projection_hit_rate >= 0.5}
                   />
                   <DetailMetric
-                    label="projected"
+                    label="forecasted"
                     value={formatPercent(backtestSummary.average_projected_return)}
                     hint="average expected rise"
                     positive={backtestSummary.average_projected_return > 0}
@@ -3281,14 +3281,14 @@ function App() {
                   <DetailMetric
                     label="pending"
                     value={formatCompact(backtestSummary.pending_evaluations)}
-                    hint={`${backtestSummary.total_signals} tracked signals`}
+                    hint={`${backtestSummary.total_signals} tracked alerts`}
                     positive={backtestSummary.pending_evaluations === 0}
                   />
                 </div>
 
                 <div className="backtest-breakdown-grid">
                   <div>
-                    <h3>by horizon</h3>
+                    <h3>by time window</h3>
                     {backtestSummary.by_horizon.length > 0 ? (
                       backtestSummary.by_horizon.map((row) => (
                         <div className="breakdown-row" key={row.horizon}>
@@ -3298,7 +3298,7 @@ function App() {
                         </div>
                       ))
                     ) : (
-                      <p className="empty-state">waiting for horizon results.</p>
+                      <p className="empty-state">waiting for time-window results.</p>
                     )}
                   </div>
                   <div>
@@ -3338,13 +3338,13 @@ function App() {
                       </div>
                     ))
                   ) : (
-                    <p className="empty-state">waiting for non-arbitrage backtest results.</p>
+                    <p className="empty-state">waiting for non-arbitrage historical test results.</p>
                   )}
                 </div>
               </>
             ) : (
               <p className="empty-state">
-                run backtest evaluation after signals have a future snapshot.
+                run historical test evaluation after signals have a future snapshot.
               </p>
             )}
           </article>
@@ -3367,7 +3367,7 @@ function App() {
                 </div>
               ))
             ) : (
-              <p className="empty-state">waiting for live signals.</p>
+              <p className="empty-state">waiting for current alerts.</p>
             )}
           </article>
         </section>
