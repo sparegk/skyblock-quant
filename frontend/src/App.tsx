@@ -1120,7 +1120,7 @@ function App() {
     [items],
   )
   const rankingLeaders = [
-    ...rankedInvestments.slice(0, 4).map((item) => ({
+    ...rankedInvestments.slice(0, 7).map((item) => ({
       key: `investment-${item.item_id}`,
       type: 'investment',
       itemId: item.item_id,
@@ -1129,7 +1129,7 @@ function App() {
       hint: `${formatPercent(item.projected_rise_percent)} projected rise`,
       score: Math.round(item.projection_confidence * 100),
     })),
-    ...npcArbitrageItems.slice(0, 3).map((item) => ({
+    ...npcArbitrageItems.slice(0, 5).map((item) => ({
       key: `npc-${item.item_id}`,
       type: 'npc flip',
       itemId: item.item_id,
@@ -1138,7 +1138,7 @@ function App() {
       hint: item.risk_label,
       score: Math.round(item.profit_consistency * 100),
     })),
-    ...occurrenceItems.slice(0, 3).map((item) => ({
+    ...occurrenceItems.slice(0, 5).map((item) => ({
       key: `occurrence-${item.item_id}`,
       type: 'catalyst',
       itemId: item.item_id,
@@ -1180,6 +1180,110 @@ function App() {
     () => occurrenceItems.slice(0, OCCURRENCE_WATCH_LIMIT),
     [occurrenceItems],
   )
+  const marketQualityItems = useMemo(() => rankedItems.slice(0, 8), [rankedItems])
+  const tightBookItems = useMemo(
+    () =>
+      [...items]
+        .filter((item) => item.sell_price > 0 && item.buy_volume + item.sell_volume > 0)
+        .sort((left, right) => spreadPercent(left) - spreadPercent(right))
+        .slice(0, 6),
+    [items],
+  )
+  const projectionRiskItems = useMemo(
+    () =>
+      [...rankedInvestments]
+        .sort((left, right) => right.max_single_jump - left.max_single_jump)
+        .slice(0, 5),
+    [rankedInvestments],
+  )
+  const catalystGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        catalyst: string
+        count: number
+        impact: number
+        confidence: number
+      }
+    >()
+
+    occurrenceItems.forEach((item) => {
+      const current = groups.get(item.catalyst_type) ?? {
+        catalyst: item.catalyst_type,
+        count: 0,
+        impact: 0,
+        confidence: 0,
+      }
+
+      current.count += 1
+      current.impact += item.expected_impact
+      current.confidence += item.confidence
+      groups.set(item.catalyst_type, current)
+    })
+
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        impact: group.count ? group.impact / group.count : 0,
+        confidence: group.count ? group.confidence / group.count : 0,
+      }))
+      .sort((left, right) => right.count - left.count || right.impact - left.impact)
+      .slice(0, 5)
+  }, [occurrenceItems])
+  const signalSeverityCounts = useMemo(
+    () =>
+      signals.reduce(
+        (counts, signal) => ({
+          ...counts,
+          [signal.severity]: (counts[signal.severity] ?? 0) + 1,
+        }),
+        {} as Record<string, number>,
+      ),
+    [signals],
+  )
+  const signalTypeGroups = useMemo(() => {
+    const groups = new Map<string, { signalType: string; count: number; confidence: number }>()
+
+    signals.forEach((signal) => {
+      const current = groups.get(signal.signal_type) ?? {
+        signalType: signal.signal_type,
+        count: 0,
+        confidence: 0,
+      }
+
+      current.count += 1
+      current.confidence += signal.confidence
+      groups.set(signal.signal_type, current)
+    })
+
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        confidence: group.count ? group.confidence / group.count : 0,
+      }))
+      .sort((left, right) => right.count - left.count || right.confidence - left.confidence)
+      .slice(0, 4)
+  }, [signals])
+  const recentRiskReasons = useMemo(
+    () =>
+      npcArbitrageItems
+        .flatMap((item) =>
+          item.risk_reasons.map((reason) => ({
+            key: `${item.item_id}-${reason}`,
+            itemName: item.item_name,
+            reason,
+          })),
+        )
+        .slice(0, 6),
+    [npcArbitrageItems],
+  )
+  const latestJobBacktestsEvaluated = latestJob
+    ? Object.values(latestJob.backtests_evaluated).reduce((total, count) => total + count, 0)
+    : 0
+  const marketCoveragePercent =
+    summary && summary.tracked_products > 0
+      ? Math.min(summary.total_rows / Math.max(summary.tracked_products * 24, 1), 1)
+      : 0
   const toggleOccurrenceDescription = (itemId: string) => {
     setExpandedOccurrenceItemIds((current) => {
       const next = new Set(current)
@@ -1854,6 +1958,52 @@ function App() {
                 ))}
               </article>
             </aside>
+
+            <section className="page-lower-grid">
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>market quality</h2>
+                  <span>score blend</span>
+                </div>
+                {marketQualityItems.slice(0, 5).map((item) => (
+                  <div className="mini-stat-row" key={item.item_id}>
+                    <div>
+                      <b>{formatItemName(item.item_id)}</b>
+                      <small>{formatCompact(item.buy_volume + item.sell_volume)} volume</small>
+                    </div>
+                    <span className="table-score"><span>{scoreItem(item)}</span></span>
+                  </div>
+                ))}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>tight books</h2>
+                  <span>lower slippage</span>
+                </div>
+                {tightBookItems.map((item) => (
+                  <div className="mini-stat-row" key={item.item_id}>
+                    <div>
+                      <b>{formatItemName(item.item_id)}</b>
+                      <small>{formatCompact(item.buy_orders + item.sell_orders)} orders</small>
+                    </div>
+                    <strong>{spreadPercent(item).toFixed(2)}%</strong>
+                  </div>
+                ))}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>snapshot coverage</h2>
+                  <span>{isSnapshotStale ? 'needs refresh' : 'fresh'}</span>
+                </div>
+                <div className="info-stack">
+                  <DetailMetric label="coverage" value={`${Math.round(marketCoveragePercent * 100)}%`} hint="row depth target" positive={marketCoveragePercent >= 0.7} />
+                  <DetailMetric label="spread rows" value={spreadItems.length} hint="wide books loaded" positive={spreadItems.length > 0} />
+                  <DetailMetric label="staleness" value={snapshotAgeMinutes === null ? 'n/a' : `${snapshotAgeMinutes}m`} hint="latest snapshot age" positive={!isSnapshotStale} />
+                </div>
+              </article>
+            </section>
           </section>
         ) : activeView === 'forecasts' ? (
           <section className="page-grid">
@@ -1969,6 +2119,62 @@ function App() {
                 ))}
               </article>
             </aside>
+
+            <section className="page-lower-grid">
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>projection risk</h2>
+                  <span>jump checks</span>
+                </div>
+                {projectionRiskItems.map((item) => (
+                  <div className="mini-stat-row" key={item.item_id}>
+                    <div>
+                      <b>{item.item_name}</b>
+                      <small>{formatPercent(item.projected_rise_percent)} projected / {formatCompact(item.average_volume)} avg volume</small>
+                    </div>
+                    <span className={item.max_single_jump > 0.3 ? 'table-score warning' : 'table-score'}>
+                      <span>{formatPercent(item.max_single_jump)}</span>
+                    </span>
+                  </div>
+                ))}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>forecast horizons</h2>
+                  <span>backtest return</span>
+                </div>
+                {(backtestSummary?.by_horizon ?? []).slice(0, 5).map((row) => (
+                  <div className="breakdown-row" key={row.horizon}>
+                    <span>{row.horizon}</span>
+                    <b>{Math.round(row.win_rate * 100)}%</b>
+                    <small>{formatPercent(row.average_return)} avg / {row.total_results} tests</small>
+                  </div>
+                ))}
+                {!backtestSummary?.by_horizon.length ? (
+                  <p className="empty-state">waiting for horizon results.</p>
+                ) : null}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>catalyst mix</h2>
+                  <span>occurrences</span>
+                </div>
+                {catalystGroups.map((group) => (
+                  <div className="mini-stat-row" key={group.catalyst}>
+                    <div>
+                      <b>{group.catalyst}</b>
+                      <small>{group.count} watches / {Math.round(group.confidence * 100)}% confidence</small>
+                    </div>
+                    <strong>{formatPercent(group.impact)}</strong>
+                  </div>
+                ))}
+                {!catalystGroups.length ? (
+                  <p className="empty-state">no catalyst groups loaded.</p>
+                ) : null}
+              </article>
+            </section>
           </section>
         ) : activeView === 'rankings' ? (
           <section className="page-grid">
@@ -2031,6 +2237,58 @@ function App() {
                 ))}
               </article>
             </aside>
+
+            <section className="page-lower-grid">
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>category leaders</h2>
+                  <span>best by lane</span>
+                </div>
+                <div className="category-leader-grid">
+                  <DetailMetric label="momentum" value={featuredInvestment ? formatCompact(featuredInvestment.projected_profit_per_unit) : 'n/a'} hint={featuredInvestment?.item_name ?? 'waiting'} positive={Boolean(featuredInvestment)} />
+                  <DetailMetric label="npc flip" value={npcArbitrageItems[0] ? formatCompact(npcArbitrageItems[0].profit_per_sell_action) : 'n/a'} hint={npcArbitrageItems[0]?.item_name ?? 'waiting'} positive={Boolean(npcArbitrageItems[0])} />
+                  <DetailMetric label="catalyst" value={featuredOccurrenceInvestment ? formatPercent(featuredOccurrenceInvestment.expected_impact) : 'n/a'} hint={featuredOccurrenceInvestment?.item_name ?? 'waiting'} positive={Boolean(featuredOccurrenceInvestment)} />
+                </div>
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>tested leaders</h2>
+                  <span>realized return</span>
+                </div>
+                {visibleBacktestResults.slice(0, 5).map((result) => (
+                  <div className="mini-stat-row" key={result.id}>
+                    <div>
+                      <b>{result.item_name}</b>
+                      <small>{result.horizon} / {result.signal_type}</small>
+                    </div>
+                    <strong className={result.return_percent >= 0 ? 'return-positive' : 'return-negative'}>
+                      {formatPercent(result.return_percent)}
+                    </strong>
+                  </div>
+                ))}
+                {!visibleBacktestResults.length ? (
+                  <p className="empty-state">no tested rankings yet.</p>
+                ) : null}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>occurrence leaders</h2>
+                  <span>event score</span>
+                </div>
+                {occurrenceItems.slice(0, 5).map((item, index) => (
+                  <div className="ranking-card" key={item.item_id}>
+                    <span className="rank-number">{index + 1}</span>
+                    <div>
+                      <b>{item.item_name}</b>
+                      <small>{item.catalyst_type} / {Math.round(item.confidence * 100)}% confidence</small>
+                    </div>
+                    <span className="table-score"><span>{Math.round(item.occurrence_score)}</span></span>
+                  </div>
+                ))}
+              </article>
+            </section>
           </section>
         ) : activeView === 'research' ? (
           <section className="page-grid">
@@ -2103,6 +2361,49 @@ function App() {
                 ))}
               </article>
             </aside>
+
+            <section className="page-lower-grid">
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>horizon evidence</h2>
+                  <span>drawdown aware</span>
+                </div>
+                {(backtestSummary?.by_horizon ?? []).slice(0, 5).map((row) => (
+                  <div className="breakdown-row" key={row.horizon}>
+                    <span>{row.horizon}</span>
+                    <b>{formatPercent(row.average_drawdown)}</b>
+                    <small>{Math.round(row.win_rate * 100)}% win rate / {row.total_results} tests</small>
+                  </div>
+                ))}
+                {!backtestSummary?.by_horizon.length ? (
+                  <p className="empty-state">no horizon evidence yet.</p>
+                ) : null}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>model coverage</h2>
+                  <span>signal pipeline</span>
+                </div>
+                <div className="info-stack">
+                  <DetailMetric label="coverage" value={backtestSummary ? `${Math.round(backtestSummary.coverage_rate * 100)}%` : 'n/a'} hint="possible evaluations" positive={(backtestSummary?.coverage_rate ?? 0) >= 0.5} />
+                  <DetailMetric label="pending" value={formatCompact(backtestSummary?.pending_evaluations ?? 0)} hint="future snapshots needed" positive={(backtestSummary?.pending_evaluations ?? 1) === 0} />
+                  <DetailMetric label="projection error" value={backtestSummary ? formatPercent(backtestSummary.average_absolute_projection_error) : 'n/a'} hint="absolute miss" positive={(backtestSummary?.average_absolute_projection_error ?? 1) <= 0.2} />
+                </div>
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>latest output</h2>
+                  <span>{latestJob?.job_type ?? 'collector'}</span>
+                </div>
+                <div className="info-stack">
+                  <DetailMetric label="products" value={formatCompact(latestJob?.products_collected ?? 0)} hint="collected last run" positive={(latestJob?.products_collected ?? 0) > 0} />
+                  <DetailMetric label="signals" value={formatCompact(latestJob?.signals_generated ?? 0)} hint="generated last run" positive={(latestJob?.signals_generated ?? 0) > 0} />
+                  <DetailMetric label="backtests" value={formatCompact(latestJobBacktestsEvaluated)} hint={latestJob ? formatBacktestCounts(latestJob.backtests_evaluated) : 'none'} positive={latestJobBacktestsEvaluated > 0} />
+                </div>
+              </article>
+            </section>
           </section>
         ) : activeView === 'alerts' ? (
           <section className="page-grid">
@@ -2169,6 +2470,62 @@ function App() {
                 ))}
               </article>
             </aside>
+
+            <section className="page-lower-grid">
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>severity mix</h2>
+                  <span>current feed</span>
+                </div>
+                <div className="category-leader-grid">
+                  <DetailMetric label="positive" value={signalSeverityCounts.positive ?? 0} hint="buy-side alerts" positive />
+                  <DetailMetric label="watch" value={signalSeverityCounts.watch ?? 0} hint="monitor alerts" positive={(signalSeverityCounts.watch ?? 0) > 0} />
+                  <DetailMetric label="risk" value={signalSeverityCounts.risk ?? 0} hint="warnings" positive={(signalSeverityCounts.risk ?? 0) === 0} />
+                </div>
+                <div className="stacked-row-list">
+                  {signalTypeGroups.map((group) => (
+                    <div className="mini-stat-row" key={group.signalType}>
+                      <div>
+                        <b>{group.signalType}</b>
+                        <small>{group.count} alerts / {Math.round(group.confidence * 100)}% avg confidence</small>
+                      </div>
+                      <strong>{group.count}</strong>
+                    </div>
+                  ))}
+                </div>
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>risk reasons</h2>
+                  <span>npc checks</span>
+                </div>
+                {recentRiskReasons.slice(0, 5).map((risk) => (
+                  <div className="alert-row" key={risk.key}>
+                    <span className="alert-dot risk-dot" />
+                    <div>
+                      <b>{risk.itemName}</b>
+                      <small>{risk.reason}</small>
+                    </div>
+                  </div>
+                ))}
+                {!recentRiskReasons.length ? (
+                  <p className="empty-state">no npc risk reasons loaded.</p>
+                ) : null}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>freshness guard</h2>
+                  <span>{isSnapshotStale ? 'stale' : 'live enough'}</span>
+                </div>
+                <div className="info-stack">
+                  <DetailMetric label="snapshot" value={snapshotAgeMinutes === null ? 'n/a' : `${snapshotAgeMinutes}m`} hint={formatSnapshotTime(summary?.latest_snapshot ?? null)} positive={!isSnapshotStale} />
+                  <DetailMetric label="latest job" value={latestJob?.status ?? 'none'} hint={latestJob?.message ?? latestJob?.job_type ?? 'waiting'} positive={latestJob?.status === 'success'} />
+                  <DetailMetric label="alerts" value={signals.length} hint="loaded in feed" positive={signals.length > 0} />
+                </div>
+              </article>
+            </section>
           </section>
         ) : activeView === 'settings' ? (
           <section className="page-grid">
@@ -2226,6 +2583,112 @@ function App() {
                 )}
               </article>
             </aside>
+
+            <section className="page-lower-grid">
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>api endpoints</h2>
+                  <span>frontend coverage</span>
+                </div>
+                {[
+                  { label: 'bazaar summary', value: summary ? 'ready' : 'waiting', hint: '/api/bazaar/summary', ok: Boolean(summary) },
+                  { label: 'npc arbitrage', value: npcArbitrageItems.length, hint: '/api/arbitrage/npc', ok: npcArbitrageItems.length > 0 },
+                  { label: 'momentum', value: rankedInvestments.length, hint: '/api/investments/momentum', ok: rankedInvestments.length > 0 },
+                  { label: 'signals', value: signals.length, hint: '/api/signals/latest', ok: signals.length > 0 },
+                  { label: 'backtests', value: backtestSummary?.total_results ?? 0, hint: '/api/backtests/summary', ok: Boolean(backtestSummary?.total_results) },
+                ].map((endpoint) => (
+                  <div className="endpoint-row" key={endpoint.label}>
+                    <span className={endpoint.ok ? 'alert-dot positive-dot' : 'alert-dot watch-dot'} />
+                    <div>
+                      <b>{endpoint.label}</b>
+                      <small>{endpoint.hint}</small>
+                    </div>
+                    <strong>{endpoint.value}</strong>
+                  </div>
+                ))}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>model thresholds</h2>
+                  <span>current filters</span>
+                </div>
+                <div className="info-stack">
+                  <DetailMetric label="min rise" value={formatPercent(MIN_FEATURED_PROJECTED_RISE)} hint="featured investment gate" positive />
+                  <DetailMetric label="min unit" value={formatCompact(MIN_FEATURED_UNIT_PRICE)} hint="low-value item filter" positive />
+                  <DetailMetric label="watch cap" value={INVESTMENT_WATCH_LIMIT} hint="ranked investment list" positive />
+                </div>
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>data sources</h2>
+                  <span>loaded state</span>
+                </div>
+                <div className="info-stack">
+                  <DetailMetric label="bazaar rows" value={formatCompact(items.length)} hint="latest rows in memory" positive={items.length > 0} />
+                  <DetailMetric label="spreads" value={formatCompact(spreadItems.length)} hint="top-spread rows" positive={spreadItems.length > 0} />
+                  <DetailMetric label="occurrences" value={formatCompact(occurrenceItems.length)} hint="catalyst watches" positive={occurrenceItems.length > 0} />
+                </div>
+              </article>
+            </section>
+
+            <section className="page-lower-grid">
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>collector cadence</h2>
+                  <span>recent run</span>
+                </div>
+                {jobRuns.slice(0, 4).map((job) => (
+                  <div className="endpoint-row" key={job.id}>
+                    <span className={job.status === 'success' ? 'alert-dot positive-dot' : 'alert-dot watch-dot'} />
+                    <div>
+                      <b>{job.job_type}</b>
+                      <small>{formatSnapshotTime(job.started_at)}</small>
+                    </div>
+                    <strong>{job.status}</strong>
+                  </div>
+                ))}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>risk presets</h2>
+                  <span>npc filters</span>
+                </div>
+                {NPC_FILTER_PRESETS.map((preset) => (
+                  <div className="mini-stat-row" key={preset.label}>
+                    <div>
+                      <b>{preset.label}</b>
+                      <small>{formatCompact(preset.value.minSellVolume)} volume / {preset.value.minSellOrders} orders</small>
+                    </div>
+                    <strong>{formatPercent(preset.value.maxProfitMargin)}</strong>
+                  </div>
+                ))}
+              </article>
+
+              <article className="panel compact-panel">
+                <div className="panel-heading">
+                  <h2>calculation modules</h2>
+                  <span>status</span>
+                </div>
+                {[
+                  { label: 'market scoring', value: marketScore, hint: 'investment and spread blend', ok: marketScore > 0 },
+                  { label: 'npc risk model', value: npcArbitrageItems.length, hint: 'liquidity and manipulation checks', ok: npcArbitrageItems.length > 0 },
+                  { label: 'backtest engine', value: backtestSummary?.total_results ?? 0, hint: 'tested signal outcomes', ok: Boolean(backtestSummary?.total_results) },
+                ].map((module) => (
+                  <div className="mini-stat-row" key={module.label}>
+                    <div>
+                      <b>{module.label}</b>
+                      <small>{module.hint}</small>
+                    </div>
+                    <span className={module.ok ? 'table-score' : 'table-score warning'}>
+                      <span>{module.value}</span>
+                    </span>
+                  </div>
+                ))}
+              </article>
+            </section>
           </section>
         ) : (
           <>
