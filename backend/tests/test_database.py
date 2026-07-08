@@ -28,6 +28,35 @@ class NpcArbitrageTests(unittest.TestCase):
         database.OCCURRENCE_INVESTMENTS_PATH = self.original_occurrence_investments_path
         self.temp_dir.cleanup()
 
+    def test_returns_available_snapshots_newest_first(self) -> None:
+        snapshots = database.get_available_snapshots(limit=2)
+
+        self.assertEqual(
+            ["2026-06-12T14:00:00Z", "2026-06-12T13:30:00Z"],
+            snapshots,
+        )
+
+    def test_reads_requested_bazaar_snapshot(self) -> None:
+        rows = database.get_latest_snapshot(limit=10, snapshot="2026-06-12T13:00:00Z")
+        high_estimated = self._find_item(rows, "HIGH_ESTIMATED")
+
+        self.assertEqual("2026-06-12T13:00:00Z", high_estimated["collected_at"])
+        self.assertEqual(91.0, high_estimated["sell_price"])
+
+    def test_searches_requested_bazaar_snapshot(self) -> None:
+        rows = database.search_items(
+            "high_estimated",
+            limit=10,
+            snapshot="2026-06-12T13:30:00Z",
+        )
+
+        self.assertEqual(1, len(rows))
+        self.assertEqual("2026-06-12T13:30:00Z", rows[0]["collected_at"])
+        self.assertEqual(92.0, rows[0]["sell_price"])
+
+    def test_returns_empty_for_missing_requested_snapshot(self) -> None:
+        self.assertEqual([], database.get_latest_snapshot(snapshot="missing"))
+        self.assertEqual([], database.get_top_spreads(snapshot="missing"))
     def test_filters_and_sorts_npc_arbitrage_candidates(self) -> None:
         rows = database.get_npc_arbitrage(limit=10)
         item_ids = [row["item_id"] for row in rows]

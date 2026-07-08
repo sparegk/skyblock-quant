@@ -52,6 +52,46 @@ class ApiRouteTests(unittest.TestCase):
 
         collect.assert_called_once_with()
 
+    def test_bazaar_routes_pass_snapshot_query_params(self) -> None:
+        with patch("app.main.get_latest_snapshot", return_value=[]) as latest:
+            self.assertEqual(
+                {"items": []},
+                main.bazaar_latest(limit=11, snapshot="2026-06-12T14:00:00Z"),
+            )
+
+        latest.assert_called_once_with(11, snapshot="2026-06-12T14:00:00Z")
+
+        with patch("app.main.search_items", return_value=[]) as search:
+            self.assertEqual(
+                {"items": []},
+                main.bazaar_items(
+                    search="redstone",
+                    limit=12,
+                    snapshot="2026-06-12T13:30:00Z",
+                ),
+            )
+
+        search.assert_called_once_with(
+            "redstone",
+            12,
+            snapshot="2026-06-12T13:30:00Z",
+        )
+
+        with patch("app.main.get_top_spreads", return_value=[]) as spreads:
+            self.assertEqual(
+                {"items": []},
+                main.bazaar_top_spreads(limit=13, snapshot="2026-06-12T13:00:00Z"),
+            )
+
+        spreads.assert_called_once_with(13, snapshot="2026-06-12T13:00:00Z")
+
+    def test_bazaar_snapshots_returns_available_timestamps(self) -> None:
+        with patch("app.main.get_available_snapshots", return_value=["latest"]) as snapshots:
+            response = main.bazaar_snapshots(limit=20)
+
+        self.assertEqual({"snapshots": ["latest"]}, response)
+        snapshots.assert_called_once_with(20)
+
     def test_npc_arbitrage_passes_filter_query_params(self) -> None:
         with patch("app.main.get_npc_arbitrage", return_value=[]) as get_npc_arbitrage:
             response = main.npc_arbitrage(

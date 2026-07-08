@@ -853,6 +853,8 @@ function App() {
   const [backtestSummary, setBacktestSummary] = useState<BacktestSummary | null>(null)
   const [backtestResults, setBacktestResults] = useState<BacktestResult[]>([])
   const [jobRuns, setJobRuns] = useState<JobRun[]>([])
+  const [availableSnapshots, setAvailableSnapshots] = useState<string[]>([])
+  const [selectedSnapshot, setSelectedSnapshot] = useState<string | null>(null)
   const [selectedNpcItemId, setSelectedNpcItemId] = useState<string | null>(null)
   const [selectedNpcDetail, setSelectedNpcDetail] = useState<NpcArbitrageDetail | null>(null)
   const [selectedInvestmentItemId, setSelectedInvestmentItemId] = useState<string | null>(null)
@@ -909,11 +911,18 @@ function App() {
           backtestSummaryResponse,
           backtestResultsResponse,
           jobsResponse,
+          snapshotsResponse,
         ] =
           await Promise.all([
           fetch(`${API_BASE_URL}/api/bazaar/summary`),
-          fetch(`${API_BASE_URL}/api/bazaar/latest?limit=40`),
-          fetch(`${API_BASE_URL}/api/bazaar/top-spreads?limit=40`),
+          fetch(`${API_BASE_URL}/api/bazaar/latest?${new URLSearchParams({
+            limit: '40',
+            ...(selectedSnapshot ? { snapshot: selectedSnapshot } : {}),
+          })}`),
+          fetch(`${API_BASE_URL}/api/bazaar/top-spreads?${new URLSearchParams({
+            limit: '40',
+            ...(selectedSnapshot ? { snapshot: selectedSnapshot } : {}),
+          })}`),
           fetch(
             `${API_BASE_URL}/api/investments/momentum?limit=25&min_gain=0&min_rising_steps=1&min_unit_price=${MIN_FEATURED_UNIT_PRICE}`,
           ),
@@ -922,6 +931,7 @@ function App() {
           fetch(`${API_BASE_URL}/api/backtests/summary`),
           fetch(`${API_BASE_URL}/api/backtests/results?limit=25`),
           fetch(`${API_BASE_URL}/api/jobs/latest?limit=5`),
+          fetch(`${API_BASE_URL}/api/bazaar/snapshots?limit=120`),
         ])
 
         if (
@@ -933,7 +943,8 @@ function App() {
           !signalsResponse.ok ||
           !backtestSummaryResponse.ok ||
           !backtestResultsResponse.ok ||
-          !jobsResponse.ok
+          !jobsResponse.ok ||
+          !snapshotsResponse.ok
         ) {
           throw new Error('Backend API request failed.')
         }
@@ -953,6 +964,7 @@ function App() {
           results: BacktestResult[]
         }
         const jobsData = (await jobsResponse.json()) as { jobs: JobRun[] }
+        const snapshotsData = (await snapshotsResponse.json()) as { snapshots: string[] }
 
         setSummary(summaryData)
         setItems(itemsData.items)
@@ -963,6 +975,10 @@ function App() {
         setBacktestSummary(backtestSummaryData)
         setBacktestResults(backtestResultsData.results)
         setJobRuns(jobsData.jobs)
+        setAvailableSnapshots(snapshotsData.snapshots)
+        if (selectedSnapshot && !snapshotsData.snapshots.includes(selectedSnapshot)) {
+          setSelectedSnapshot(null)
+        }
       } catch {
         setError('start the backend api to load live bazaar data')
       } finally {
@@ -971,7 +987,7 @@ function App() {
     }
 
     loadDashboardData()
-  }, [])
+  }, [selectedSnapshot])
 
   useEffect(() => {
     const request = new AbortController()
@@ -1169,8 +1185,11 @@ function App() {
   const bestNpcProfit = npcArbitrageItems[0]?.profit_per_item ?? 0
   const selectedNpcItem =
     npcArbitrageItems.find((item) => item.item_id === selectedNpcItemId) ?? null
-  const snapshotAgeMinutes = getSnapshotAgeMinutes(summary?.latest_snapshot ?? null)
-  const isSnapshotStale = snapshotAgeMinutes !== null && snapshotAgeMinutes > 20
+  const activeSnapshotTimestamp = selectedSnapshot ?? summary?.latest_snapshot ?? null
+  const isHistoricalSnapshot = Boolean(selectedSnapshot)
+  const alertCount = signals.length
+  const snapshotAgeMinutes = getSnapshotAgeMinutes(activeSnapshotTimestamp)
+  const isSnapshotStale = !isHistoricalSnapshot && snapshotAgeMinutes !== null && snapshotAgeMinutes > 20
   const bestInvestmentGain = featuredInvestment?.projected_rise_percent ?? 0
   const forecastChartValues =
     investmentItems.length > 0
@@ -1416,15 +1435,35 @@ function App() {
           </label>
 
           <div className="toolbar">
-            <button>
+            <label
+              className={isHistoricalSnapshot ? 'snapshot-picker active-filter-button' : 'snapshot-picker'}
+              title="Choose the Bazaar snapshot shown in market tables"
+            >
               <CalendarDays size={17} />
-              {formatSnapshotTime(summary?.latest_snapshot ?? null)}
+              <select
+                aria-label="Choose Bazaar snapshot"
+                value={selectedSnapshot ?? ''}
+                onChange={(event) => setSelectedSnapshot(event.target.value || null)}
+              >
+                <option value="">live latest - {formatSnapshotTime(summary?.latest_snapshot ?? null)}</option>
+                {availableSnapshots.map((snapshot) => (
+                  <option value={snapshot} key={snapshot}>
+                    {formatSnapshotTime(snapshot)}
+                  </option>
+                ))}
+              </select>
               <ChevronDown size={15} />
-            </button>
-            <button>
+            </label>
+            <button
+              className={activeView === 'markets' && !query.trim() ? 'active-filter-button' : ''}
+              type="button"
+              onClick={() => {
+                setActiveView('markets')
+                setQuery('')
+              }}
+            >
               <Boxes size={17} />
               all bazaar
-              <ChevronDown size={15} />
             </button>
             <button
               className={activeView === 'opportunities' && showNpcFilters ? 'active-filter-button' : ''}
@@ -1443,8 +1482,14 @@ function App() {
               <SlidersHorizontal size={17} />
               risk settings
             </button>
-            <button className="icon-button" aria-label="notifications">
+            <button
+              className={activeView === 'alerts' ? 'icon-button notification-button active-filter-button' : 'icon-button notification-button'}
+              type="button"
+              aria-label={`${alertCount} alerts`}
+              onClick={() => setActiveView('alerts')}
+            >
               <Bell size={18} />
+              <span className="alert-count-badge" aria-hidden="true">{alertCount}</span>
             </button>
           </div>
         </header>
@@ -2059,7 +2104,7 @@ function App() {
                 <div className="info-stack">
                   <DetailMetric label="coverage" value={`${Math.round(marketCoveragePercent * 100)}%`} hint="row depth target" positive={marketCoveragePercent >= 0.7} />
                   <DetailMetric label="spread rows" value={spreadItems.length} hint="large-gap rows loaded" positive={spreadItems.length > 0} />
-                  <DetailMetric label="data age" value={snapshotAgeMinutes === null ? 'n/a' : `${snapshotAgeMinutes}m`} hint="latest snapshot age" positive={!isSnapshotStale} />
+                  <DetailMetric label="data age" value={snapshotAgeMinutes === null ? 'n/a' : `${snapshotAgeMinutes}m`} hint={isHistoricalSnapshot ? "selected history" : "latest snapshot age"} positive={!isSnapshotStale} />
                 </div>
               </article>
             </section>
@@ -2579,7 +2624,7 @@ function App() {
                   <span>{isSnapshotStale ? 'outdated' : 'current'}</span>
                 </div>
                 <div className="info-stack">
-                  <DetailMetric label="snapshot" value={snapshotAgeMinutes === null ? 'n/a' : `${snapshotAgeMinutes}m`} hint={formatSnapshotTime(summary?.latest_snapshot ?? null)} positive={!isSnapshotStale} />
+                  <DetailMetric label="snapshot" value={isHistoricalSnapshot ? 'history' : snapshotAgeMinutes === null ? 'n/a' : `${snapshotAgeMinutes}m`} hint={formatSnapshotTime(activeSnapshotTimestamp)} positive={!isSnapshotStale} />
                   <DetailMetric label="latest job" value={latestJob?.status ?? 'none'} hint={latestJob?.message ?? latestJob?.job_type ?? 'waiting'} positive={latestJob?.status === 'success'} />
                   <DetailMetric label="alerts" value={signals.length} hint="loaded in the alert list" positive={signals.length > 0} />
                 </div>
@@ -2601,7 +2646,7 @@ function App() {
               <div className="settings-grid">
                 <DetailMetric label="api base" value="127.0.0.1" hint={API_BASE_URL} positive={!error} />
                 <DetailMetric label="database" value={summary?.database_ready ? 'ready' : 'waiting'} hint={`${formatCompact(summary?.tracked_products ?? 0)} products`} positive={Boolean(summary?.database_ready)} />
-                <DetailMetric label="snapshot" value={formatSnapshotTime(summary?.latest_snapshot ?? null)} hint={isSnapshotStale ? 'outdated' : 'current enough'} positive={!isSnapshotStale} />
+                <DetailMetric label="snapshot" value={formatSnapshotTime(activeSnapshotTimestamp)} hint={isHistoricalSnapshot ? 'selected history' : isSnapshotStale ? 'outdated' : 'current enough'} positive={!isSnapshotStale} />
                 <DetailMetric label="signals" value={signals.length} hint="latest alerts" positive={signals.length > 0} />
                 <DetailMetric label="jobs" value={jobRuns.length} hint={latestJob?.status ?? 'no runs'} positive={latestJob?.status === 'success'} />
                 <DetailMetric label="historical tests" value={backtestSummary ? formatCompact(backtestSummary.total_results) : 'n/a'} hint="historical test results" positive={Boolean(backtestSummary?.total_results)} />
@@ -3089,7 +3134,7 @@ function App() {
               </div>
               <p>
                 {isSnapshotStale && snapshotAgeMinutes !== null
-                  ? `latest snapshot is ${formatCompact(snapshotAgeMinutes)} minutes old.`
+                  ? `${isHistoricalSnapshot ? "historical snapshot selected." : `latest snapshot is ${formatCompact(snapshotAgeMinutes)} minutes old.`}`
                   : 'items with recent price strength and usable volume are prioritized for review.'}
               </p>
               <div className="confidence-line">

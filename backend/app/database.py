@@ -484,8 +484,8 @@ def get_market_summary() -> dict[str, Any]:
     }
 
 
-def get_latest_snapshot(limit: int = 25) -> list[dict[str, Any]]:
-    """Return rows from the most recent Bazaar snapshot."""
+def get_available_snapshots(limit: int = 50) -> list[str]:
+    """Return available Bazaar snapshot timestamps, newest first."""
     if not database_exists():
         return []
 
@@ -495,37 +495,55 @@ def get_latest_snapshot(limit: int = 25) -> list[dict[str, Any]]:
 
         rows = connection.execute(
             """
-            SELECT
-                item_id,
-                buy_price,
-                sell_price,
-                buy_volume,
-                sell_volume,
-                buy_orders,
-                sell_orders,
-                spread,
-                collected_at
+            SELECT DISTINCT collected_at
             FROM bazaar_snapshots
-            WHERE collected_at = (
-                SELECT MAX(collected_at)
-                FROM bazaar_snapshots
-            )
-            ORDER BY buy_volume + sell_volume DESC
+            ORDER BY collected_at DESC
             LIMIT ?
             """,
             (limit,),
         ).fetchall()
 
-    return [dict(row) for row in rows]
+    return [row["collected_at"] for row in rows]
 
 
-def search_items(query: str, limit: int = 25) -> list[dict[str, Any]]:
-    """Search item ids in the latest Bazaar snapshot."""
+def get_snapshot_timestamp(
+    connection: sqlite3.Connection | PostgresConnection,
+    snapshot: str | None = None,
+) -> str | None:
+    """Resolve a requested timestamp, falling back to the latest snapshot."""
+    requested_snapshot = snapshot.strip() if snapshot else ""
+    if requested_snapshot:
+        row = connection.execute(
+            """
+            SELECT collected_at
+            FROM bazaar_snapshots
+            WHERE collected_at = ?
+            LIMIT 1
+            """,
+            (requested_snapshot,),
+        ).fetchone()
+        return row["collected_at"] if row else None
+
+    row = connection.execute(
+        """
+        SELECT MAX(collected_at) AS collected_at
+        FROM bazaar_snapshots
+        """
+    ).fetchone()
+    return row["collected_at"] if row else None
+
+
+def get_latest_snapshot(limit: int = 25, snapshot: str | None = None) -> list[dict[str, Any]]:
+    """Return rows from the requested Bazaar snapshot, or the latest one."""
     if not database_exists():
         return []
 
     with closing(get_connection()) as connection:
         if not market_tables_exist(connection):
+            return []
+
+        snapshot_timestamp = get_snapshot_timestamp(connection, snapshot)
+        if snapshot_timestamp is None:
             return []
 
         rows = connection.execute(
@@ -541,27 +559,64 @@ def search_items(query: str, limit: int = 25) -> list[dict[str, Any]]:
                 spread,
                 collected_at
             FROM bazaar_snapshots
-            WHERE collected_at = (
-                SELECT MAX(collected_at)
-                FROM bazaar_snapshots
-            )
+            WHERE collected_at = ?
+            ORDER BY buy_volume + sell_volume DESC
+            LIMIT ?
+            """,
+            (snapshot_timestamp, limit),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+def search_items(query: str, limit: int = 25, snapshot: str | None = None) -> list[dict[str, Any]]:
+    """Search item ids in the requested Bazaar snapshot, or the latest one."""
+    if not database_exists():
+        return []
+
+    with closing(get_connection()) as connection:
+        if not market_tables_exist(connection):
+            return []
+
+        snapshot_timestamp = get_snapshot_timestamp(connection, snapshot)
+        if snapshot_timestamp is None:
+            return []
+
+        rows = connection.execute(
+            """
+            SELECT
+                item_id,
+                buy_price,
+                sell_price,
+                buy_volume,
+                sell_volume,
+                buy_orders,
+                sell_orders,
+                spread,
+                collected_at
+            FROM bazaar_snapshots
+            WHERE collected_at = ?
             AND item_id LIKE ?
             ORDER BY buy_volume + sell_volume DESC
             LIMIT ?
             """,
-            (f"%{query.upper()}%", limit),
+            (snapshot_timestamp, f"%{query.upper()}%", limit),
         ).fetchall()
 
     return [dict(row) for row in rows]
 
 
-def get_top_spreads(limit: int = 25) -> list[dict[str, Any]]:
-    """Return items with the largest positive spread in the latest snapshot."""
+def get_top_spreads(limit: int = 25, snapshot: str | None = None) -> list[dict[str, Any]]:
+    """Return items with the largest positive spread in a Bazaar snapshot."""
     if not database_exists():
         return []
 
     with closing(get_connection()) as connection:
         if not market_tables_exist(connection):
+            return []
+
+        snapshot_timestamp = get_snapshot_timestamp(connection, snapshot)
+        if snapshot_timestamp is None:
             return []
 
         rows = connection.execute(
@@ -577,14 +632,11 @@ def get_top_spreads(limit: int = 25) -> list[dict[str, Any]]:
                 spread,
                 collected_at
             FROM bazaar_snapshots
-            WHERE collected_at = (
-                SELECT MAX(collected_at)
-                FROM bazaar_snapshots
-            )
+            WHERE collected_at = ?
             ORDER BY spread DESC
             LIMIT ?
             """,
-            (limit,),
+            (snapshot_timestamp, limit),
         ).fetchall()
 
     return [dict(row) for row in rows]

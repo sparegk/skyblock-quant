@@ -29,6 +29,7 @@ from app.database import (
     NPC_ARBITRAGE_HISTORY_SNAPSHOTS,
     evaluate_signal_backtests,
     get_backtest_results,
+    get_available_snapshots,
     get_backtest_summary,
     get_database_status,
     get_investment_momentum,
@@ -104,29 +105,39 @@ def bazaar_summary() -> dict[str, object]:
     return get_market_summary()
 
 
+@app.get("/api/bazaar/snapshots")
+def bazaar_snapshots(
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> dict[str, object]:
+    return {"snapshots": get_available_snapshots(limit)}
+
+
 @app.get("/api/bazaar/latest")
 def bazaar_latest(
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    snapshot: Annotated[str | None, Query(max_length=40)] = None,
 ) -> dict[str, object]:
-    return {"items": get_latest_snapshot(limit)}
+    return {"items": get_latest_snapshot(limit, snapshot=snapshot)}
 
 
 @app.get("/api/bazaar/items")
 def bazaar_items(
     search: Annotated[str, Query(max_length=80)] = "",
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    snapshot: Annotated[str | None, Query(max_length=40)] = None,
 ) -> dict[str, object]:
     if not search.strip():
-        return {"items": get_latest_snapshot(limit)}
+        return {"items": get_latest_snapshot(limit, snapshot=snapshot)}
 
-    return {"items": search_items(search.strip(), limit)}
+    return {"items": search_items(search.strip(), limit, snapshot=snapshot)}
 
 
 @app.get("/api/bazaar/top-spreads")
 def bazaar_top_spreads(
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    snapshot: Annotated[str | None, Query(max_length=40)] = None,
 ) -> dict[str, object]:
-    return {"items": get_top_spreads(limit)}
+    return {"items": get_top_spreads(limit, snapshot=snapshot)}
 
 
 @app.get("/api/arbitrage/npc")
